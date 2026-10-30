@@ -154,6 +154,7 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 
 ## 8. งานที่ควรทำต่อ (เรียงตามลำดับ)
 
+0. **ทดสอบหน้าย่อยช่อง (v1.4) บน emulator `t35`** — เปิดแอป → ค้นคำ → กดช่องในผลค้นหา → ตรวจว่าโหลดวิดีโอ 30 คลิปได้, สลับ ใหม่สุด/ยอดวิว ทำงาน, ปุ่มย้อนกลับกลับไปผลค้นหาเดิม, กดคลิปเล่นได้ ไม่ crash (ค้างจาก 30/10/69)
 1. Build APK สำหรับ `arm64-v8a,armeabi-v7a`, ส่งไปติดตั้งบนเครื่องจริง แล้วทดสอบ: ดาวน์โหลด 720p h264, เล่น, ปิดจอ, คุมจาก notification, หูฟัง Bluetooth
 2. ยืนยัน ABI ของ Infinix Smart 9 (`adb shell getprop ro.product.cpu.abilist`) — ถ้าเป็น arm64 ตัวเดียวตัด `armeabi-v7a` ได้อีก
 3. ทดสอบ `playChoice()` (เล่นสตรีม) กับทุกความละเอียด และเช็กว่า `Yt.direct` + `--extractor-args tv_embedded` ทำงาน
