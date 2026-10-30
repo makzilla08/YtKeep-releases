@@ -1,6 +1,9 @@
-# YtKeep — แอปดาวน์โหลด/เล่นคลิป YouTube แบบออฟไลน์ (Android)
+# YTNx — แอปดาวน์โหลด/เล่นคลิป YouTube แบบออฟไลน์ (Android)
 
-เอกสารส่งต่อ (handoff) สำหรับคนหรือ AI คนถัดไปที่ต้องทำงานต่อ — อัปเดตล่าสุด **2026-10-28**
+เอกสารส่งต่อ (handoff) สำหรับคนหรือ AI คนถัดไปที่ต้องทำงานต่อ — อัปเดตล่าสุด **2026-10-30**
+
+> **ชื่อโปรเจค**: แอปชื่อ **YTNx** (เดิมชื่อ YtKeep) · `applicationId = com.chue.ytnx` · label "YTNx"
+> แต่ **โฟลเดอร์โปรเจค** ยังเป็น `~/android-dev/YtKeep` และ **namespace/package โค้ด** ยังเป็น `com.chue.ytkeep` (ไม่ได้ rename)
 
 ## ฟีเจอร์ค้นหา/สำรวจในแอป (2026-10-29)
 - แท็บ: ค้นหา · 🔥 แนะนำ · ข่าว · เพลง · กีฬา · เทคโนโลยี · เกม · วิทยาศาสตร์ · ความรู้ · ตลก · ทำอาหาร · ท่องเที่ยว · ธรรมชาติ · หนัง · ติดตาม · บันทึก
@@ -13,6 +16,13 @@
 - กรองคลิป LIVE ออกจากฟีด (badges มี LIVE) — yt-dlp ดึงไลฟ์ค้าง/ช้า
 - ช่องค้นหาเป็น **ค้นหาคำ/ชื่อช่อง** (ไม่ใช่ช่องวางลิงก์) — ตรวจ regex อัตโนมัติ ถ้าเป็นลิงก์จะดึงฟอร์แมตให้, กด Enter (IME Search) ได้
 - ผลค้นหามีสองส่วน: `Feed.searchChannels` (channelRenderer, กด = ติดตาม/เลิกติดตาม) และ `Feed.search` (videoRenderer)
+
+### หน้าย่อยช่อง (v1.4, 2026-10-29)
+- กดชื่อช่องในผลค้นหา → เข้าแท็บ `channel` แสดงวิดีโอ 30 คลิปแรกของช่อง พร้อมปุ่มย้อนกลับ (`ArrowBack`) กลับไปผลค้นหาเดิม
+- ดึงข้อมูลด้วย yt-dlp: `Yt.channelVideos()` → `--flat-playlist --playlist-end 30 --dump-json` (ไม่ใช้ InnerTube browse เพราะคืนวิดีโอเปล่า)
+- เรียงได้ 2 แบบด้วย `FilterChip` — **ใหม่สุด** (ค่าเริ่มต้น, ตามลำดับ playlist) / **ยอดวิว** (sort จาก `parseViews`)
+- แต่ละแถวใช้ `HitRow` เดิม: กดเปิด (เล่นสตรีม + บันทึก signal `OPENED`), กดค้าง = เมนูดาวน์โหลด, ปุ่มบันทึก
+- สถานะ: build ผ่าน (2026-10-30) — **ยังไม่ได้กดทดสอบ UI บน emulator**
 
 ## 1. เป้าหมาย
 
@@ -37,6 +47,7 @@
 | เล่นสตรีมตรงจาก YouTube | ✅ โค้ดพร้อม ยังไม่ทดสอบครบ |
 | เล่นตอนปิดจอ / คุมจาก notification | ✅ ทดสอบบน emulator (Dozing แล้ว position เดินต่อ, `cmd media_session dispatch pause/play` ทำงาน) |
 | ฟีดแนะนำเฉพาะบุคคล | ✅ ใช้คำค้น/หัวข้อ/ช่องที่ผู้ใช้สนใจ, ตัดคลิปที่เพิ่งเปิด, ล้างประวัติได้ |
+| หน้าย่อยช่อง (กดช่อง → วิดีโอช่อง + เรียงใหม่/ยอดวิว) | ✅ โค้ด + build ผ่าน (v1.4) — ยังไม่ทดสอบ UI บน emulator |
 | ทดสอบบนเครื่องจริง (arm64) | ❌ ยังไม่ได้ — ไม่มีเครื่องต่อ adb |
 | ตัด ABI x86_64 ออก + build release | ❌ ยังไม่ได้ทำ |
 
@@ -158,7 +169,9 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 - ดาวน์โหลด 480p + merge: 57 MB, `ffprobe` = av1 854×480 + aac 6ch, 634.5 วิ
 - เล่นไฟล์ในเครื่อง: `state=PLAYING`, ภาพขึ้นเต็มจอ (letterbox), หน้าจอ PlayerActivity
 - ปิดจอ (power → `mWakefulness=Dozing`): เล่นต่อเนื่อง position 350767→358734 ms ใน 8 วิ; สั่ง `cmd media_session dispatch pause` → PAUSED(2), `play` → PLAYING(3)
-- คลัง: `index.json` ใน `filesDir`, ไฟล์ใน `/storage/emulated/0/Android/data/com.chue.ytkeep/files/media/`
+- คลัง: `index.json` ใน `filesDir`, ไฟล์ใน `/storage/emulated/0/Android/data/com.chue.ytnx/files/media/` (path ภายนอกผูกกับ `applicationId`; เปลี่ยนชื่อเป็น `com.chue.ytnx` แล้ว ไฟล์เก่าที่ติดตั้งสมัย `com.chue.ytkeep` จะไม่ถูกเห็น)
+
+- 2026-10-30: `assembleDebug` ผ่านหลังเพิ่มหน้าย่อยช่อง (v1.4, `versionCode 5`, `applicationId com.chue.ytnx`, label "YTNx") — ยังไม่ได้ติดตั้ง/ทดสอบ UI บน emulator
 
 ## 10. บริบทเครื่อง dev
 

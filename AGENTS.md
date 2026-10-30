@@ -1,7 +1,13 @@
-# AGENTS.md — YtKeep (project rules)
+# AGENTS.md — YTNx (project rules, โฟลเดอร์ `YtKeep`)
 
 อ่าน `README.md` ในโฟลเดอร์นี้ก่อนเสมอ (มีสถานะงาน, กับดัก, ผลทดสอบ, งานค้าง)
 ไฟล์นี้คือกฎสั้น ๆ ที่ต้องทำตามเมื่อแก้โปรเจกต์นี้
+
+## ชื่อโปรเจค
+
+- แอปชื่อ **YTNx** (เดิม YtKeep) · `android:label="YTNx"` · `applicationId = com.chue.ytnx`
+- โฟลเดอร์โปรเจคยังเป็น `~/android-dev/YtKeep` · namespace/package โค้ดยังเป็น `com.chue.ytkeep` — **อย่า rename ถ้าไม่จำเป็น** (data path ภายนอกผูกกับ applicationId ไม่ใช่ namespace)
+- ถ้าเปลี่ยน version ให้ bump `versionCode` + `versionName` และแก้หัวข้อ "สถานะปัจจุบัน" ใน README ทุกครั้ง
 
 ## Build / install
 
@@ -35,6 +41,7 @@ $ANDROID_HOME/platform-tools/adb install -r YtKeep/app/build/outputs/apk/debug/a
 | ตัวเลือก client ของ YouTube | `Yt.kt` (`YT_CLIENT_VR`, `fetchFast`) |
 | args ของ yt-dlp ตอนดาวน์โหลด | `DownloadService.kt` |
 | พฤติกรรม player / wake mode / data source | `PlayerService.kt`, `PlayerActivity.kt` |
+| หน้าย่อยช่อง (แท็บ `channel`) | `MainActivity.kt` (แท็บ `"channel"`) + `Yt.channelVideos()` + `Feed.channel()` |
 | คลังไฟล์ (index) | `Lib.kt` |
 | permission / FGS type / activity | `app/src/main/AndroidManifest.xml` |
 
@@ -42,11 +49,13 @@ $ANDROID_HOME/platform-tools/adb install -r YtKeep/app/build/outputs/apk/debug/a
 
 - [ ] build ผ่าน (`assembleDebug`)
 - [ ] ติดตั้ง + เปิดแอปบน emulator ได้ ไม่ crash
+- [ ] ถ้าแตะ UI: กดทดสอบ flow จริงบน emulator (ไม่ใช่แค่ build ผ่าน)
 - [ ] ถ้าแตะเรื่องดาวน์โหลด: ดึงไฟล์ออกมาดูด้วย `ffprobe` ว่ามีทั้ง video + audio
 - [ ] ถ้าแตะเรื่องเล่น: `adb shell dumpsys media_session | grep PlaybackState` ต้องเป็น `PLAYING`
 - [ ] อัปเดต `README.md` หัวข้อ "สถานะปัจจุบัน" และ "งานที่ควรทำต่อ"
 
-## สถานะปัจจุบัน (2026-10-28)
+## สถานะปัจจุบัน (2026-10-30)
+- v1.4 — build ผ่าน: เพิ่มหน้าย่อยช่อง (กดช่องในผลค้นหา → วิดีโอ 30 คลิป, เรียงใหม่สุด/ยอดวิว, ปุ่มย้อนกลับ) ยังไม่ทดสอบ UI บน emulator
 - ค้นหา/ฟีดในแอปทำงาน: `Feed.kt` (InnerTube) + `Store.kt` (ความสนใจ/ติดตาม/บันทึก) + UI แท็บใน `MainActivity`
 - ทดสอบบน emulator แล้ว: แนะนำ 24 รายการ, ข่าว, กดคลิป→ดึงฟอร์แมต (1080p/720p/480p), ติดตามช่อง, บันทึก
 - ยังไม่ทดสอบเครื่องจริง (Infinix Smart 9) — screen-off/BT/ความเร็ว QuickJS

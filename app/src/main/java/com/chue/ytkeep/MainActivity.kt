@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
@@ -208,6 +209,13 @@ fun App(
     var searching by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf("search") }
     var cat by remember { mutableStateOf("") }
+    var channelId by remember { mutableStateOf<String?>(null) }
+    var channelName by remember { mutableStateOf("") }
+    var channelSort by remember { mutableStateOf<String>("new") }
+    var searchSort by remember { mutableStateOf<String>("new") }
+    var channelVideos by remember { mutableStateOf<List<Hit>>(emptyList()) }
+    var channelLoading by remember { mutableStateOf(false) }
+    var channelErr by remember { mutableStateOf<String?>(null) }
     var menuHit by remember { mutableStateOf<Hit?>(null) }
     var defQ by remember { mutableStateOf(Store.defQuality(ctx)) }
     var feed by remember { mutableStateOf<List<Hit>>(emptyList()) }
@@ -231,6 +239,34 @@ fun App(
     val followedIds = remember(tick) { Store.follows(ctx).map { it.second }.toSet() }
     LaunchedEffect(Unit) {
         ytver = withContext(Dispatchers.IO) { runCatching { Yt.version(ctx) }.getOrDefault("?") }
+    }
+
+    LaunchedEffect(channelId) {
+        if (channelId == null) return@LaunchedEffect
+        channelLoading = true
+        channelVideos = emptyList()
+        channelErr = null
+        scope.launch {
+            val url = "https://www.youtube.com/channel/$channelId"
+            val got = withContext(Dispatchers.IO) {
+                runCatching { Feed.channel(ctx, url, 30) }.getOrElse {
+                    channelErr = it.message ?: it.javaClass.simpleName
+                    emptyList<Hit>()
+                }
+            }
+            channelVideos = when (channelSort) {
+                "views" -> got.sortedByDescending { parseViews(it.views) }
+                else -> got
+            }
+            channelLoading = false
+        }
+    }
+
+    LaunchedEffect(channelSort) {
+        channelVideos = when (channelSort) {
+            "views" -> channelVideos.sortedByDescending { parseViews(it.views) }
+            else -> channelVideos
+        }
     }
 
     val doFetch: (String) -> Unit = { videoUrl ->
@@ -477,9 +513,9 @@ fun App(
                 val followed = c.url in followedIds
                 Row(
                     Modifier.fillMaxWidth().clickable {
-                        if (followed) Store.unfollow(ctx, c.url)
-                        else Store.follow(ctx, c.name, c.url, c.id)
-                        tick++
+                        channelId = c.id
+                        channelName = c.name
+                        tab = "channel"
                     }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -499,19 +535,46 @@ fun App(
                             color = Color(0xFF9CA3AF)
                         )
                     }
-                    Icon(
-                        Icons.Default.Star,
-                        if (followed) "เลิกติดตาม" else "ติดตาม",
-                        tint = if (followed) Color(0xFFFBBF24) else Color(0xFF3A3A46)
-                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = {
+                        if (followed) Store.unfollow(ctx, c.url)
+                        else Store.follow(ctx, c.name, c.url, c.id)
+                        tick++
+                    }) {
+                        Icon(
+                            Icons.Default.Star,
+                            if (followed) "เลิกติดตาม" else "ติดตาม",
+                            tint = if (followed) Color(0xFFFBBF24) else Color(0xFF3A3A46)
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(6.dp))
         }
 
         if (hits.isNotEmpty()) {
-            SectionLabel("วิดีโอ (${hits.size})")
-            hits.forEach { h ->
+            val dispHits = when (searchSort) {
+                "views" -> hits.sortedByDescending { parseViews(it.views) }
+                else -> hits
+            }
+            SectionLabel("วิดีโอ (${dispHits.size})")
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                FilterChip(
+                    selected = searchSort == "new",
+                    onClick = { searchSort = "new" },
+                    label = { Text("ใหม่สุด", fontSize = 12.sp) }
+                )
+                FilterChip(
+                    selected = searchSort == "views",
+                    onClick = { searchSort = "views" },
+                    label = { Text("ยอดวิว", fontSize = 12.sp) }
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            dispHits.forEach { h ->
                 HitRow(
                     h = h,
                     saved = h.id in savedIds,
@@ -524,12 +587,6 @@ fun App(
                     },
                     onLongPress = { menuHit = h },
                     onSave = { Store.toggleSave(ctx, h); tick++ },
-                    onFollow = if (h.channelId.isBlank()) null else ({
-                        val cu = "https://www.youtube.com/channel/${h.channelId}"
-                        if (h.channelId in followedIds) Store.unfollow(ctx, cu)
-                        else Store.follow(ctx, h.channel, cu, h.channelId)
-                        tick++
-                    }),
                     onDownload = { menuHit = h }
                 )
             }
@@ -538,7 +595,7 @@ fun App(
 
         }
 
-        if (tab != "search" && tab != "settings") {
+        if (tab != "search" && tab != "settings" && tab != "channel") {
             if (feedLoading) {
                 Row(
                     Modifier.fillMaxWidth().padding(16.dp),
@@ -571,17 +628,69 @@ fun App(
                             Store.toggleSave(ctx, h)
                             tick++
                         },
-                        onFollow = if (h.channelId.isBlank()) null else ({
-                            val cu = "https://www.youtube.com/channel/${h.channelId}"
-                            if (h.channelId in followedIds) Store.unfollow(ctx, cu)
-                            else Store.follow(ctx, h.channel, cu, h.channelId)
-                            tick++
-                        }),
                         onDownload = { menuHit = h }
                     )
                 }
                 Spacer(Modifier.height(6.dp))
             }
+        }
+
+        if (tab == "channel") {
+            Row(Modifier.fillMaxWidth().clickable { tab = "search"; channelId = null },
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.ArrowBack, "กลับ", modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(channelName ?: "ช่อง", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                FilterChip(
+                    selected = channelSort == "new",
+                    onClick = { channelSort = "new" },
+                    label = { Text("ใหม่สุด", fontSize = 12.sp) }
+                )
+                FilterChip(
+                    selected = channelSort == "views",
+                    onClick = { channelSort = "views" },
+                    label = { Text("ยอดวิว", fontSize = 12.sp) }
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            channelErr?.let {
+                Text("ผิดพลาด: $it", color = Color(0xFFF87171), modifier = Modifier.padding(vertical = 8.dp))
+            }
+            if (channelLoading) {
+                Row(Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() }
+            }
+            if (channelVideos.isNotEmpty()) {
+                SectionLabel("วิดีโอ (${channelVideos.size})")
+                channelVideos.forEach { h ->
+                    HitRow(
+                        h = h,
+                        saved = h.id in savedIds,
+                        followed = h.channelId.isNotBlank() && h.channelId in followedIds,
+                        onOpen = {
+                            Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
+                            url = h.url
+                            tab = "search"
+                            channelId = null
+                            hits = emptyList()
+                            doFetch(h.url)
+                        },
+                        onLongPress = { menuHit = h },
+                        onSave = { Store.toggleSave(ctx, h); tick++ },
+                        onDownload = { menuHit = h }
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+            } else if (!channelLoading && channelErr == null) {
+                Text("ไม่มีวิดีโอในช่องนี้", color = Color(0xFF9CA3AF), modifier = Modifier.padding(vertical = 8.dp))
+            }
+            Spacer(Modifier.height(16.dp))
         }
 
         info?.let { v ->
@@ -858,9 +967,8 @@ private fun HitRow(
     followed: Boolean,
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
-    onSave: () -> Unit,
-    onFollow: (() -> Unit)?,
-    onDownload: () -> Unit
+        onSave: () -> Unit,
+        onDownload: () -> Unit
 ) {
     Row(
         Modifier.fillMaxWidth()
@@ -872,7 +980,7 @@ private fun HitRow(
             model = h.thumb,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.width(112.dp).height(63.dp).clip(RoundedCornerShape(8.dp))
+            modifier = Modifier.width(150.dp).height(84.dp).clip(RoundedCornerShape(8.dp))
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
@@ -903,15 +1011,6 @@ private fun HitRow(
                 "บันทึก",
                 tint = if (saved) Color(0xFFF87171) else Color(0xFF9CA3AF)
             )
-        }
-        onFollow?.let {
-            IconButton(onClick = it) {
-                Icon(
-                    Icons.Default.Star,
-                    "ติดตาม",
-                    tint = if (followed) Color(0xFFFBBF24) else Color(0xFF3A3A46)
-                )
-            }
         }
     }
 }
@@ -959,5 +1058,17 @@ private fun Card2(content: @Composable () -> Unit) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(12.dp)) { content() }
+    }
+}
+
+private fun parseViews(s: String): Long {
+    val t = s.lowercase().replace(Regex("[^0-9.km ]+"), "").trim()
+    if (t.isEmpty()) return 0
+    val suffix = if (t.endsWith("m")) "m" else if (t.endsWith("k")) "k" else ""
+    val num = t.removeSuffix(suffix).toDoubleOrNull() ?: 0.0
+    return when (suffix) {
+        "m" -> (num * 1_000_000).toLong()
+        "k" -> (num * 1_000).toLong()
+        else -> num.toLong()
     }
 }
