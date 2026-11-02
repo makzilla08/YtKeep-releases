@@ -22,12 +22,18 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -55,6 +61,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -72,6 +81,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -227,8 +237,13 @@ fun App(
     var cat by remember { mutableStateOf("") }
     var channelId by remember { mutableStateOf<String?>(null) }
     var channelName by remember { mutableStateOf("") }
+    var channelThumb by remember { mutableStateOf<String?>(null) }
+    var channelSubs by remember { mutableStateOf("") }
+    var channelOrigin by remember { mutableStateOf("search") }
     var channelSort by remember { mutableStateOf<String>("new") }
+    var channelSortExpanded by remember { mutableStateOf(false) }
     var searchSort by remember { mutableStateOf<String>("new") }
+    var channelBaseVideos by remember { mutableStateOf<List<Hit>>(emptyList()) }
     var channelVideos by remember { mutableStateOf<List<Hit>>(emptyList()) }
     var channelLoading by remember { mutableStateOf(false) }
     var channelErr by remember { mutableStateOf<String?>(null) }
@@ -277,19 +292,14 @@ fun App(
                     emptyList<Hit>()
                 }
             }
-            channelVideos = when (channelSort) {
-                "views" -> got.sortedByDescending { parseViews(it.views) }
-                else -> got
-            }
+            channelBaseVideos = got
+            channelVideos = sortChannelVideos(got, channelSort)
             channelLoading = false
         }
     }
 
     LaunchedEffect(channelSort) {
-        channelVideos = when (channelSort) {
-            "views" -> channelVideos.sortedByDescending { parseViews(it.views) }
-            else -> channelVideos
-        }
+        channelVideos = sortChannelVideos(channelBaseVideos, channelSort)
     }
 
     val doFetch: (String) -> Unit = { videoUrl ->
@@ -389,26 +399,41 @@ fun App(
     Scaffold(
         containerColor = Color(0xFF0B0B0D),
         bottomBar = {
-            NavigationBar(containerColor = Color(0xFF16161C)) {
-                NAV.forEach { (id, label, icon) ->
-                    NavigationBarItem(
-                        selected = tab == id || (tab == "channel" && id == "search"),
-                        onClick = {
-                            when (id) {
-                                "search" -> {
-                                    tab = "search"
-                                    info = null
+            Column {
+                HorizontalDivider(color = Color(0xFF302126))
+                NavigationBar(containerColor = Color(0xFF101013)) {
+                    NAV.forEach { (id, label, icon) ->
+                        NavigationBarItem(
+                            selected = tab == id || (tab == "channel" && channelOrigin == id),
+                            onClick = {
+                                when (id) {
+                                    "search" -> {
+                                        tab = "search"
+                                        channelId = null
+                                        info = null
+                                    }
+                                    "library", "follow" -> {
+                                        tab = id
+                                        channelId = null
+                                        feed = emptyList()
+                                    }
+                                    else -> {
+                                        channelId = null
+                                        loadFeed(id)
+                                    }
                                 }
-                                "library", "follow" -> {
-                                    tab = id
-                                    feed = emptyList()
-                                }
-                                else -> loadFeed(id)
-                            }
-                        },
-                        icon = { Icon(icon, label) },
-                        label = { Text(label, fontSize = 10.sp) }
-                    )
+                            },
+                            icon = { Icon(icon, label) },
+                            label = { Text(label, fontSize = 11.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFFD86A73),
+                                selectedTextColor = Color(0xFFD86A73),
+                                unselectedIconColor = Color(0xFF94A3B8),
+                                unselectedTextColor = Color(0xFF94A3B8),
+                                indicatorColor = Color.Transparent
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -418,43 +443,69 @@ fun App(
             .fillMaxSize()
             .padding(pad)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(horizontal = 16.dp)
     ) {
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().height(52.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (tab == "settings") "ตั้งค่า" else "YTNx",
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFD86A73)
-                )
-                if (tab != "settings") {
-                    Text(
-                        "โหลดเก็บไว้ดูตอนไม่มีเน็ต · เล่นจอปิดได้",
-                        fontSize = 13.sp,
-                        color = Color(0xFF9CA3AF)
-                    )
+            if (tab == "channel" || tab == "settings") {
+                IconButton(onClick = {
+                    if (tab == "settings") {
+                        tab = "search"
+                    } else {
+                        tab = channelOrigin
+                        channelId = null
+                    }
+                }) {
+                    Icon(Icons.Default.ArrowBack, "กลับ", tint = Color(0xFFF8FAFC))
                 }
             }
-            IconButton(onClick = {
-                if (tab == "settings") {
-                    tab = "search"
-                } else {
+            Text(
+                if (tab == "settings") "ตั้งค่า" else "YTNx",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFF8FAFC)
+            )
+            Spacer(Modifier.weight(1f))
+            if (tab != "settings" && tab != "channel") {
+                IconButton(onClick = {
                     tab = "settings"
                     feed = emptyList()
+                }) {
+                    Icon(Icons.Default.Settings, "ตั้งค่า", tint = Color(0xFFD86A73))
                 }
-            }) {
-                Icon(
-                    if (tab == "settings") Icons.Default.ArrowBack else Icons.Default.Settings,
-                    if (tab == "settings") "กลับ" else "ตั้งค่า",
-                    tint = Color(0xFFD86A73)
-                )
             }
         }
-        Spacer(Modifier.height(10.dp))
+
+        if (tab == "search") {
+            Text(
+                "ค้นหาช่องและวิดีโอ",
+                fontSize = 25.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFF8FAFC),
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            Text(
+                "พิมพ์ชื่อช่องหรือคำที่อยากดู",
+                fontSize = 13.sp,
+                color = Color(0xFF94A3B8),
+                modifier = Modifier.padding(top = 2.dp, bottom = 16.dp)
+            )
+        } else if (tab == "hot" || tab == "follow" || tab == "library") {
+                Text(
+                    when (tab) {
+                        "hot" -> "แนะนำ"
+                        "follow" -> "ติดตาม"
+                        else -> "คลัง"
+                    },
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFF8FAFC),
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+        }
+        Spacer(Modifier.height(if (tab == "search") 4.dp else 12.dp))
         if (tab == "hot") {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -512,41 +563,19 @@ fun App(
 
         if (tab != "settings") {
         if (tab == "search") {
-        OutlinedTextField(
+        SearchField(
             value = url,
             onValueChange = { url = it },
-            label = { Text("ค้นหา YouTube") },
-            placeholder = { Text("พิมพ์คำค้นหรือชื่อช่อง · วางลิงก์ก็ได้") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = {
-                if (isLink) doFetch(url) else doSearch()
-            }),
-            modifier = Modifier.fillMaxWidth()
+            onPaste = { clip.getText()?.text?.let { url = extractUrl(it) } },
+            onSearch = { if (isLink) doFetch(url) else doSearch() },
+            enabled = !loading && !searching,
+            buttonLabel = when {
+                searching -> "กำลังค้นหา…"
+                loading -> "กำลังดึง…"
+                isLink -> "ดึงข้อมูล"
+                else -> "ค้นหา"
+            }
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = {
-                clip.getText()?.text?.let { url = extractUrl(it) }
-            }) {
-                Icon(Icons.Default.ContentPaste, null, modifier = Modifier.width(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("วาง")
-            }
-            Spacer(Modifier.weight(1f))
-            Button(
-                onClick = { if (isLink) doFetch(url) else doSearch() },
-                enabled = !loading && !searching
-            ) {
-                Text(
-                    when {
-                        searching -> "กำลังค้นหา…"
-                        loading -> "กำลังดึง…"
-                        isLink -> "ดึงข้อมูล"
-                        else -> "ค้นหา"
-                    }
-                )
-            }
-        }
 
         if (hdLoading) {
             Text(
@@ -569,46 +598,37 @@ fun App(
         }
 
         if (channels.isNotEmpty()) {
-            SectionLabel("ช่อง (${channels.size})")
+            Row(
+                Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionLabel("ช่อง")
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${channels.size} รายการ",
+                    fontSize = 12.sp,
+                    color = Color(0xFF94A3B8)
+                )
+            }
             channels.forEach { c ->
                 val followed = c.url in followedIds
-                Row(
-                    Modifier.fillMaxWidth().clickable {
+                ChannelResultCard(
+                    channel = c,
+                    followed = followed,
+                    onOpen = {
                         channelId = c.id
                         channelName = c.name
+                        channelThumb = c.thumb
+                        channelSubs = c.subs
+                        channelOrigin = "search"
                         tab = "channel"
-                    }.padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AsyncImage(
-                        model = c.thumb,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(22.dp))
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(c.name, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            listOfNotNull(c.subs.takeIf { it.isNotBlank() }, "ช่อง")
-                                .joinToString(" · "),
-                            fontSize = 11.sp,
-                            color = Color(0xFF9CA3AF)
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = {
+                    },
+                    onToggleFollow = {
                         if (followed) Store.unfollow(ctx, c.url)
                         else Store.follow(ctx, c.name, c.url, c.id)
                         tick++
-                    }) {
-                        Icon(
-                            Icons.Default.Star,
-                            if (followed) "เลิกติดตาม" else "ติดตาม",
-                            tint = if (followed) Color(0xFFD86A73) else Color(0xFF3A3A46)
-                        )
                     }
-                }
+                )
             }
             Spacer(Modifier.height(6.dp))
         }
@@ -618,7 +638,18 @@ fun App(
                 "views" -> hits.sortedByDescending { parseViews(it.views) }
                 else -> hits
             }
-            SectionLabel("วิดีโอ (${dispHits.size})")
+            Row(
+                Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionLabel("วิดีโอ")
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${dispHits.size} รายการ",
+                    fontSize = 12.sp,
+                    color = Color(0xFF94A3B8)
+                )
+            }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -636,10 +667,10 @@ fun App(
             }
             Spacer(Modifier.height(6.dp))
             dispHits.forEach { h ->
-                HitRow(
-                    h = h,
+                VideoCard(
+                    hit = h,
                     saved = h.id in savedIds,
-                    followed = h.channelId.isNotBlank() && h.channelId in followedIds,
+                    downloadLabel = downloadQualityLabel(defQ),
                     onOpen = {
                         Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
                         url = h.url
@@ -648,7 +679,7 @@ fun App(
                     },
                     onLongPress = { menuHit = h },
                     onSave = { Store.toggleSave(ctx, h); tick++ },
-                    onDownload = { menuHit = h }
+                    onDownload = { quickDownload(h, defQ) }
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -676,6 +707,14 @@ fun App(
                                 .clickable {
                                     channelId = cid
                                     channelName = name
+                                    channels.firstOrNull { it.id == cid }?.let {
+                                        channelThumb = it.thumb
+                                        channelSubs = it.subs
+                                    } ?: run {
+                                        channelThumb = null
+                                        channelSubs = ""
+                                    }
+                                    channelOrigin = "follow"
                                     tab = "channel"
                                 }
                                 .padding(vertical = 8.dp),
@@ -724,10 +763,10 @@ fun App(
                     val title = Feed.topics.firstOrNull { it.id == cat }?.label ?: "แนะนำ"
                     SectionLabel("$title (${feed.size})")
                     feed.forEach { h ->
-                        HitRow(
-                            h = h,
+                        VideoCard(
+                            hit = h,
                             saved = h.id in savedIds,
-                            followed = h.channelId.isNotBlank() && h.channelId in followedIds,
+                            downloadLabel = "ดาวน์โหลด",
                             onOpen = {
                                 Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
                                 url = h.url
@@ -750,29 +789,125 @@ fun App(
         }
 
         if (tab == "channel") {
-            Row(Modifier.fillMaxWidth().clickable { tab = "search"; channelId = null },
-                verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.ArrowBack, "กลับ", modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(channelName ?: "ช่อง", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(10.dp))
+            ChannelBanner(channelName, channelThumb)
+            val channelUrl = "https://www.youtube.com/channel/${channelId.orEmpty()}"
+            val isFollowed = channelUrl in followedIds
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                FilterChip(
-                    selected = channelSort == "new",
-                    onClick = { channelSort = "new" },
-                    label = { Text("ใหม่สุด", fontSize = 12.sp) }
-                )
-                FilterChip(
-                    selected = channelSort == "views",
-                    onClick = { channelSort = "views" },
-                    label = { Text("ยอดวิว", fontSize = 12.sp) }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        channelName,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFF8FAFC),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        channelSubs.ifBlank { "ช่อง YouTube" },
+                        fontSize = 12.sp,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    Text(
+                        if (channelLoading) "กำลังโหลดวิดีโอ…" else "${channelVideos.size.coerceAtMost(30)} วิดีโอ",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
+                Button(
+                    onClick = {
+                        if (isFollowed) Store.unfollow(ctx, channelUrl)
+                        else Store.follow(ctx, channelName, channelUrl, channelId.orEmpty())
+                        tick++
+                    },
+                    shape = RoundedCornerShape(22.dp)
+                ) {
+                    Icon(Icons.Default.Star, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (isFollowed) "ติดตามแล้ว" else "ติดตาม", fontSize = 12.sp)
+                }
+            }
+            HorizontalDivider(color = Color(0xFF302126))
+            Row(
+                Modifier.fillMaxWidth().height(46.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Bottom
+                ) {
+                    Text(
+                        "วิดีโอ",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFD86A73),
+                        modifier = Modifier.padding(bottom = 7.dp)
+                    )
+                    Spacer(
+                        Modifier.width(64.dp).height(3.dp)
+                            .background(Color(0xFFB63D49), RoundedCornerShape(2.dp))
+                    )
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box {
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.clickable { channelSortExpanded = true }
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (channelSort == "views") "ยอดวิว" else "ใหม่สุด",
+                                fontSize = 12.sp,
+                                color = Color(0xFFF8FAFC)
+                            )
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                null,
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = channelSortExpanded,
+                        onDismissRequest = { channelSortExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("ใหม่สุด") },
+                            onClick = {
+                                channelSort = "new"
+                                channelSortExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("ยอดวิว") },
+                            onClick = {
+                                channelSort = "views"
+                                channelSortExpanded = false
+                            }
+                        )
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (channelLoading) "กำลังโหลด…" else "${channelVideos.size.coerceAtMost(30)} รายการ",
+                    fontSize = 11.sp,
+                    color = Color(0xFF94A3B8)
                 )
             }
-            Spacer(Modifier.height(8.dp))
             channelErr?.let {
                 Text("ผิดพลาด: $it", color = Color(0xFFF87171), modifier = Modifier.padding(vertical = 8.dp))
             }
@@ -781,28 +916,30 @@ fun App(
                     horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() }
             }
             if (channelVideos.isNotEmpty()) {
-                SectionLabel("วิดีโอ (${channelVideos.size})")
                 channelVideos.forEach { h ->
-                    HitRow(
-                        h = h,
+                    VideoCard(
+                        hit = h,
                         saved = h.id in savedIds,
-                        followed = h.channelId.isNotBlank() && h.channelId in followedIds,
+                        downloadLabel = downloadQualityLabel(defQ),
                         onOpen = {
                             Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
                             url = h.url
-                            tab = "search"
+                            tab = channelOrigin
                             channelId = null
                             hits = emptyList()
                             doFetch(h.url)
                         },
                         onLongPress = { menuHit = h },
                         onSave = { Store.toggleSave(ctx, h); tick++ },
-                        onDownload = { menuHit = h }
+                        onDownload = { quickDownload(h, defQ) }
                     )
                 }
-                Spacer(Modifier.height(6.dp))
             } else if (!channelLoading && channelErr == null) {
-                Text("ไม่มีวิดีโอในช่องนี้", color = Color(0xFF9CA3AF), modifier = Modifier.padding(vertical = 8.dp))
+                Text(
+                    "ไม่มีวิดีโอในช่องนี้",
+                    color = Color(0xFF94A3B8),
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -996,10 +1133,10 @@ fun App(
                         )
                     }
                     savedVideos.forEach { hit ->
-                        HitRow(
-                            h = hit,
+                        VideoCard(
+                            hit = hit,
                             saved = true,
-                            followed = hit.channelId.isNotBlank() && hit.channelId in followedIds,
+                            downloadLabel = "ดาวน์โหลด",
                             onOpen = {
                                 Store.recordInteraction(ctx, hit, Store.InterestSignal.OPENED)
                                 url = hit.url
@@ -1124,6 +1261,24 @@ fun App(
                 fontSize = 11.sp,
                 color = Color(0xFF9CA3AF)
             )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("yt-dlp $ytver", fontSize = 11.sp, color = Color(0xFF6B7280))
+                Spacer(Modifier.weight(1f))
+                TextButton(enabled = !updating, onClick = {
+                    scope.launch {
+                        updating = true
+                        runCatching { withContext(Dispatchers.IO) { Yt.updateNow(ctx) } }
+                            .onSuccess { ytver = it }
+                            .onFailure { err = "อัปเดตไม่สำเร็จ: ${it.message ?: it.javaClass.simpleName}" }
+                        updating = false
+                    }
+                }) {
+                    Text(if (updating) "กำลังอัปเดต…" else "อัปเดต yt-dlp", fontSize = 12.sp)
+                }
+            }
         }
 
         menuHit?.let { h ->
@@ -1233,25 +1388,6 @@ fun App(
             )
         }
 
-        Row(
-            Modifier.fillMaxWidth().padding(top = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("yt-dlp $ytver", fontSize = 11.sp, color = Color(0xFF6B7280))
-            Spacer(Modifier.weight(1f))
-            TextButton(enabled = !updating, onClick = {
-                scope.launch {
-                    updating = true
-                    runCatching { withContext(Dispatchers.IO) { Yt.updateNow(ctx) } }
-                        .onSuccess { ytver = it }
-                        .onFailure { err = "อัปเดตไม่สำเร็จ: ${it.message ?: it.javaClass.simpleName}" }
-                    updating = false
-                }
-            }) {
-                Text(if (updating) "กำลังอัปเดต…" else "อัปเดต yt-dlp", fontSize = 12.sp)
-            }
-        }
-
         Spacer(Modifier.height(24.dp))
     }
     }
@@ -1273,56 +1409,292 @@ private suspend fun feedFor(ctx: android.content.Context, key: String): List<Hit
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HitRow(
-    h: Hit,
-    saved: Boolean,
+private fun SearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onPaste: () -> Unit,
+    onSearch: () -> Unit,
+    enabled: Boolean,
+    buttonLabel: String
+) {
+    Surface(
+        color = Color(0xFF171416),
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF302126)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.heightIn(min = 54.dp).padding(start = 12.dp, end = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Search, null, tint = Color(0xFF94A3B8))
+            Spacer(Modifier.width(10.dp))
+            Box(Modifier.weight(1f)) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFFE2E8F0)),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                    modifier = Modifier.fillMaxWidth()
+                ) { innerTextField ->
+                    if (value.isBlank()) {
+                        Text(
+                            "พิมพ์ชื่อช่องหรือคำที่อยากดู",
+                            fontSize = 13.sp,
+                            color = Color(0xFF94A3B8),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+            IconButton(onClick = onPaste, enabled = enabled, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Default.ContentPaste, "วางลิงก์", tint = Color(0xFF94A3B8))
+            }
+            Spacer(Modifier.width(4.dp))
+            Button(
+                onClick = onSearch,
+                enabled = enabled,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.height(40.dp)
+            ) {
+                Text(buttonLabel, fontSize = 12.sp, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelResultCard(
+    channel: Feed.Channel,
     followed: Boolean,
     onOpen: () -> Unit,
-    onLongPress: () -> Unit,
-        onSave: () -> Unit,
-        onDownload: () -> Unit
+    onToggleFollow: () -> Unit
 ) {
-    Row(
-        Modifier.fillMaxWidth()
-            .combinedClickable(onClick = onOpen, onLongClick = onLongPress)
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        color = Color(0xFF151216),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(onClick = onOpen)
     ) {
-        AsyncImage(
-            model = h.thumb,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.width(150.dp).height(84.dp).clip(RoundedCornerShape(8.dp))
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(h.title, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(
-                listOfNotNull(
-                    h.channel.takeIf { it.isNotBlank() },
-                    h.views.takeIf { it.isNotBlank() },
-                    h.age.takeIf { it.isNotBlank() },
-                    fmtTime(h.seconds).takeIf { it.isNotBlank() }
-                ).joinToString(" · "),
-                fontSize = 11.sp,
-                color = Color(0xFF9CA3AF),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        IconButton(onClick = onDownload) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(46.dp).clip(CircleShape).background(Color(0xFF263449)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(channel.name.take(1), fontWeight = FontWeight.Bold, color = Color.White)
+                channel.thumb?.let {
+                    AsyncImage(
+                        model = it,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    channel.name,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    channel.subs.ifBlank { "ช่อง" },
+                    fontSize = 11.sp,
+                    color = Color(0xFF94A3B8),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onToggleFollow, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Default.Star,
+                    if (followed) "เลิกติดตาม" else "ติดตาม",
+                    tint = if (followed) Color(0xFFD86A73) else Color(0xFF94A3B8)
+                )
+            }
             Icon(
-                Icons.Default.Download,
-                "ดาวน์โหลด",
+                Icons.Default.KeyboardArrowRight,
+                null,
                 tint = Color(0xFFD86A73)
             )
         }
-        IconButton(onClick = onSave) {
-            Icon(
-                if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                "บันทึก",
-                tint = if (saved) Color(0xFFD86A73) else Color(0xFF9CA3AF)
-            )
+    }
+}
+
+@Composable
+private fun ChannelBanner(name: String, thumb: String?) {
+    Box(
+        Modifier.fillMaxWidth()
+            .height(126.dp)
+            .background(
+                Brush.linearGradient(
+                    listOf(Color(0xFF201316), Color(0xFF431B22), Color(0xFF642630))
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            color = Color.White,
+            shape = CircleShape,
+            modifier = Modifier.size(92.dp)
+        ) {
+            Box(
+                Modifier.fillMaxSize().padding(4.dp).clip(CircleShape)
+                    .background(Color(0xFF0B5CAD)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    name.take(1).uppercase(),
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                if (thumb != null) {
+                    AsyncImage(
+                        model = thumb,
+                        contentDescription = "$name channel",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VideoCard(
+    hit: Hit,
+    saved: Boolean,
+    downloadLabel: String,
+    onOpen: () -> Unit,
+    onLongPress: () -> Unit,
+    onSave: () -> Unit,
+    onDownload: () -> Unit
+) {
+    Surface(
+        color = Color(0xFF151216),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+            .combinedClickable(onClick = onOpen, onLongClick = onLongPress)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.width(106.dp).height(76.dp).clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF201316))
+            ) {
+                AsyncImage(
+                    model = hit.thumb,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                val duration = fmtTime(hit.seconds)
+                if (duration.isNotBlank()) {
+                    Surface(
+                        color = Color(0xD9000000),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                    ) {
+                        Text(
+                            duration,
+                            fontSize = 9.sp,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(
+                Modifier.weight(1f).heightIn(min = 76.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        hit.title,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFF8FAFC),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        listOfNotNull(
+                            hit.views.takeIf { it.isNotBlank() },
+                            hit.age.takeIf { it.isNotBlank() }
+                        ).joinToString(" · ").ifBlank { hit.channel },
+                        fontSize = 10.sp,
+                        color = Color(0xFF94A3B8),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.height(30.dp).clickable(onClick = onOpen)
+                            .padding(horizontal = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            null,
+                            tint = Color(0xFFD86A73),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text("เล่น", fontSize = 10.sp, color = Color(0xFFD86A73))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Surface(
+                        color = Color(0xFF812E38),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f).height(30.dp).clickable(onClick = onDownload)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Download,
+                                null,
+                                tint = Color.White,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                downloadLabel,
+                                fontSize = 9.sp,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+            IconButton(onClick = onSave, modifier = Modifier.size(34.dp)) {
+                Icon(
+                    if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    "บันทึก",
+                    tint = if (saved) Color(0xFFD86A73) else Color(0xFF94A3B8),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
@@ -1355,9 +1727,9 @@ private fun ChoiceRow(
 private fun SectionLabel(t: String) {
     Text(
         t,
-        fontSize = 13.sp,
+        fontSize = 15.sp,
         fontWeight = FontWeight.SemiBold,
-        color = Color(0xFFD86A73),
+        color = Color(0xFFF8FAFC),
         modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
     )
 }
@@ -1384,6 +1756,17 @@ private fun parseViews(s: String): Long {
         else -> num.toLong()
     }
 
+}
+
+private fun sortChannelVideos(videos: List<Hit>, sort: String): List<Hit> = when (sort) {
+    "views" -> videos.sortedByDescending { parseViews(it.views) }
+    else -> videos
+}
+
+private fun downloadQualityLabel(quality: String): String = when (quality) {
+    "audio" -> "เสียง"
+    "best" -> "ดีที่สุด"
+    else -> "${quality}p"
 }
 
 private fun downloadStateLabel(state: DownloadState): String = when (state) {

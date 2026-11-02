@@ -56,8 +56,9 @@ $ANDROID_HOME/platform-tools/adb install -r YtKeep/app/build/outputs/apk/debug/a
 
 ## สถานะปัจจุบัน (2026-11-02)
 - v1.5 (`versionCode 6`) เผยแพร่ที่ GitHub Release `v2.0`
-- YTNx 2.0 (`versionCode 7`) เผยแพร่ที่ GitHub Release `v2.1`; ARM APK มี arm64-v8a + armeabi-v7a และใช้ Android Debug certificate เดียวกับรุ่นก่อน
-- ทดสอบบน emulator `t35`: ค้นหา NASA, เปิดหน้าช่องและยืนยันป้าย "วิดีโอ (30)", เปิดคลัง 3 ส่วนและหน้าตั้งค่าได้
+- YTNx 2.1 (`versionCode 8`) เผยแพร่ที่ GitHub Release `v2.2`; ARM APK มี arm64-v8a + armeabi-v7a และใช้ Android Debug certificate เดียวกับรุ่นก่อน
+- ทดสอบบน emulator `t35`: ค้นหา NASA, เปิดหน้าช่องและยืนยันป้าย "30 รายการ", เปิดคลัง 3 ส่วนและหน้าตั้งค่าได้
+- ปรับหน้า Search และ Channel ตามม็อกอัป v2; รายการช่อง/วิดีโอเป็นการ์ดและหน้าช่องมีแบนเนอร์กับปุ่มดาวน์โหลด
 - คิวดาวน์โหลด v2 ยังต้องทดสอบเพิ่ม: progress, cancel/retry และการกู้สถานะหลัง service เริ่มใหม่; ดู [V2-DESIGN.md](./V2-DESIGN.md)
 - หน้าย่อยช่องมีปุ่มเรียงใหม่สุด/ยอดวิวและปุ่มย้อนกลับ
 - แท็บ "ติดตาม" แสดงรายชื่อช่องให้เลือกแล้วกดเข้าไปดูวิดีโอในช่องนั้น

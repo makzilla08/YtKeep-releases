@@ -1,12 +1,22 @@
 # YTNx v2 design and handoff
 
-This document records the approved v2 scope, behavior, constraints, and implementation handoff state. YTNx 2.0 is published; the remaining emulator and device checks are listed below.
+This document records the approved v2 scope, behavior, constraints, and implementation handoff state. YTNx 2.1 is published; the remaining emulator and device checks are listed below.
 
 ## Goal
 
 Make YTNx easier to use for its main task: find a YouTube channel or video, choose a download quality, and play downloaded files later. Keep the app usable on an Infinix Smart 9 with Android 14 and 3 GB of RAM.
 
 The approved visual direction is a near-black interface with restrained, muted red accents. The v2 channel mockup is in the session artifacts as `ytnx-v2-channel-mockup.svg` and `ytnx-v2-channel-mockup.png`.
+
+## UI structure
+
+- Keep download, search, feed, and library state in `App`.
+- Use a compact app bar. Show the page title below it instead of repeating a large YTNx title and tagline on every tab.
+- Build the Search page around the mockup: a page heading, one combined search field, rounded channel cards, and video cards with play, save, and visible download actions.
+- Build the Channel page around the mockup: a tinted banner, channel avatar or initial, channel name and subscriber text, follow action, video tab, sort menu, result count, and video cards.
+- Use the default download quality for the card action. Keep the existing long-press quality picker for other choices.
+- Keep the four-item bottom bar, remove the selected-item pill, and use the muted red accent for the active icon and label.
+- Keep screen state and existing repository calls in `App`; keep extracted Compose components presentational and callback-driven.
 
 ## Navigation
 
@@ -70,7 +80,7 @@ Ask for confirmation before deleting a downloaded file. If deletion fails, show 
 - Do not leave `android.util.Log` calls in `DownloadService`.
 - The default ABI configuration is for arm64 and armeabi-v7a. Keep the x86_64 test override available. Do not remove it before emulator testing.
 - The user cannot connect the Infinix phone over USB. Do not request device testing as a prerequisite. Report that real-device verification remains outstanding.
-- When changing the app version, set `versionCode` to 7 and `versionName` to `2.0`. Update the README's current status and next-work sections.
+- When changing the app version, increase `versionCode` and `versionName`. Update the README's current status and next-work sections.
 
 ## Current implementation state
 
@@ -81,9 +91,10 @@ The implementation includes the existing followed-channel screen, release metada
 - `Lib.kt` searches and sorts downloaded files. Failed file deletion raises an error.
 - `LibraryFilterTest.kt` tests local-file search and sorting. `DownloadTaskTest.kt` tests cancellation, completion, recovery, and retry transitions.
 - `MainActivity.kt` has four bottom tabs, settings in the header, and the download, local-file, and saved-video sections in Library. File deletion has confirmation and displays errors.
-- `app/build.gradle.kts` sets version 2.0 and version code 7. `README.md` and `AGENTS.md` point to this handoff.
-- `testDebugUnitTest assembleDebug` pass. YTNx 2.0 was published at GitHub Release `v2.1`. The normal debug APK contains `arm64-v8a` and `armeabi-v7a`; metadata reports `com.chue.ytnx`, version code 7, and version name 2.0.
-- On emulator `t35`, the x86_64 build launches, search returns channels and videos, and a channel page displays exactly 30 results. The three Library sections and Settings screen open successfully.
+- `app/build.gradle.kts` sets version 2.1 and version code 8. `README.md` and `AGENTS.md` record the release.
+- `testDebugUnitTest assembleDebug` pass. YTNx 2.1 was published at GitHub Release `v2.2`. The normal debug APK contains `arm64-v8a` and `armeabi-v7a`; metadata reports `com.chue.ytnx`, version code 8, and version name 2.1.
+- On emulator `t35`, the x86_64 build launches, Search shows channel and video cards, and the Channel page shows its banner, follow action, sort menu, and 30 results.
+- On emulator `t35`, the three Library sections and Settings screen open successfully.
 - Download queue actions and service-restart recovery still need emulator testing. No Infinix Smart 9 testing was possible because the phone cannot connect over USB or ADB over Wi-Fi.
 
 Review the current diff before editing. Some modified lines predate this task.
@@ -98,12 +109,13 @@ Review the current diff before editing. Some modified lines predate this task.
 - [x] Remove stale temporary files during download completion and service recovery.
 - [x] Stop polling download progress when the user leaves Library.
 - [x] Use the muted-red palette for active controls and accents.
-- [x] Set version 2.0 and version code 7. Update `README.md` and `AGENTS.md`.
+- [x] Match the Search and Channel screens to the approved mockup while preserving the existing search and download flows.
+- [x] Set version 2.1 and version code 8. Update `README.md` and `AGENTS.md`.
 - [x] Run `testDebugUnitTest`, `assembleDebug`, APK metadata inspection, and `git diff --check`.
 - [x] Install the x86_64 debug build on `t35`; verify app launch, search, the 30-video channel cap, Library sections, and Settings.
 - [ ] Test download progress, cancellation, retry, and service-restart recovery on an emulator.
 - [ ] Review the final diff and test all remaining UI and download flows.
-- [ ] Do not claim real Infinix testing. Do not publish until the UI and download flow pass testing.
+- [x] Publish YTNx 2.1 after the revised Search and Channel screens passed emulator checks. Keep queue recovery and Infinix Smart 9 testing listed as pending.
 
 ## Build commands
 

@@ -50,8 +50,8 @@
 | ฟีดแนะนำเฉพาะบุคคล | ✅ ใช้คำค้น/หัวข้อ/ช่องที่ผู้ใช้สนใจ, ตัดคลิปที่เพิ่งเปิด, ล้างประวัติได้ |
 | หน้าย่อยช่อง (กดช่อง → วิดีโอช่อง + เรียงใหม่/ยอดวิว) | ✅ ทดสอบบน emulator t35: แสดงไม่เกิน 30 วิดีโอ |
 | แท็บ "ติดตาม" เป็นรายชื่อช่องให้เลือก แล้วกดเข้าไปดูวิดีโอในช่องนั้น | ✅ มีใน v1.5; เคยทดสอบ flow บน emulator |
-| APK ล่าสุดที่เผยแพร่ | ✅ GitHub Release `v2.1`: YTNx 2.0 / versionCode 7, arm64-v8a + armeabi-v7a |
-| YTNx v2.0 | ✅ unit tests และ ARM build ผ่าน; ทดสอบค้นหา/หน้าช่อง (30 คลิป)/คลัง/ตั้งค่าบน t35 แล้ว |
+| APK ล่าสุดที่เผยแพร่ | ✅ GitHub Release `v2.2`: YTNx 2.1 / versionCode 8, arm64-v8a + armeabi-v7a |
+| YTNx v2.1 | ✅ ปรับหน้า Search และ Channel ตามม็อกอัป; unit tests ผ่านและทดสอบ flow ค้นหา/เปิดช่องบน t35 |
 | คิวดาวน์โหลด v2 | ⚠️ มี progress/cancel/retry/recovery; ยังต้องทดสอบ flow เหล่านี้บน emulator |
 | ทดสอบบนเครื่องจริง (arm64) | ❌ ยังไม่ได้ — Infinix Smart 9 เชื่อมต่อ ADB ไม่ได้ |
 | APK ที่เผยแพร่ | เซ็นด้วย Android Debug certificate เดียวกับรุ่นก่อน; ยังไม่ได้ทดสอบติดตั้งบน Infinix Smart 9 |
@@ -153,7 +153,7 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 
 ### การรับมือ YouTube เปลี่ยนโครงสร้าง
 - แอปอัปเดต yt-dlp เองอัตโนมัติทุก 3 วันผ่าน **nightly channel** (`UpdateChannel._NIGHTLY`) — extractor fix มาก่อน stable
-- มีปุ่ม **"อัปเดต yt-dlp"** + แสดงเวอร์ชันที่ฝังอยู่ท้ายหน้าแรก (เช่น `yt-dlp 2026.10.26`) ให้กดเองได้เมื่อมีคลิปที่ดึงไม่ได้
+- มีปุ่ม **"อัปเดต yt-dlp"** + แสดงเวอร์ชันที่ฝังอยู่ในหน้า "ตั้งค่า" (เช่น `yt-dlp 2026.10.26`) ให้กดเองได้เมื่อมีคลิปที่ดึงไม่ได้
 - `Yt.fetch` มี fallback 3 ชั้น: client ที่ขอ → client default → บังคับอัปเดตแล้วลองใหม่
 - จุดที่ยังเสี่ยง: YouTube บังคับ PO token / SABR กับบาง client — ถ้าเจอ ให้ลองสลับ `YT_CLIENT_VR` เป็น `tv`, `ios`, `web_embedded` (แก้ที่ `Yt.kt`)
 
@@ -164,7 +164,7 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 2. ทดสอบ Infinix Smart 9 เมื่อเชื่อมต่อได้; USB เสียและเชื่อม ADB ผ่าน Wi-Fi ไม่สำเร็จ
 3. ตรวจ `playChoice()` กับความละเอียดต่าง ๆ และ `Yt.direct` ที่ใช้ `tv_embedded`
 4. ประเมินเวลาเรียกข้อมูล HD บนเครื่องจริง; `getInfo()` ยกเลิกไม่ได้ จึงต้องไม่บล็อก UI
-5. ทดสอบ APK v2.0 ที่เผยแพร่บน Infinix Smart 9 เมื่อผู้ใช้สะดวก; ยืนยัน flow คิวดาวน์โหลดบน emulator
+5. ทดสอบ APK v2.1 ที่เผยแพร่บน Infinix Smart 9 เมื่อผู้ใช้สะดวก; ยืนยัน flow คิวดาวน์โหลดบน emulator
 
 ## 9. ผลทดสอบที่ยืนยันแล้ว (2026-10-28, emulator x86_64)
 
@@ -181,6 +181,7 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 - 2026-11-02: APK v1.5 มี arm64-v8a + armeabi-v7a และใช้ Android Debug certificate เดียวกับ APK รุ่นก่อน; ผู้ใช้ยังต้องทดสอบติดตั้งและ flow บนเครื่องจริง
 - 2026-11-02: เผยแพร่ YTNx 2.0 (`versionCode 7`) ใน GitHub Release `v2.1`; ARM APK ใช้ลายเซ็นเดียวกับ v1.5 และ unit tests/build ผ่าน
 - 2026-11-02: emulator `t35` ยืนยันค้นหา NASA, เปิดหน้าช่องได้ 30 คลิป, เปิดคลังและตั้งค่าได้; คิวดาวน์โหลดและเครื่อง Infinix ยังรอทดสอบ
+- 2026-11-02: ปรับหน้า Search และ Channel ให้ใช้หัวข้อค้นหา, การ์ดช่อง/วิดีโอ, แบนเนอร์ช่อง และปุ่มดาวน์โหลดตามม็อกอัป; YTNx 2.1 (`versionCode 8`) เผยแพร่ใน GitHub Release `v2.2`
 
 ## 10. บริบทเครื่อง dev
 
