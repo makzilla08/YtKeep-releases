@@ -88,6 +88,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -246,6 +247,8 @@ fun App(
     var channelBaseVideos by remember { mutableStateOf<List<Hit>>(emptyList()) }
     var channelVideos by remember { mutableStateOf<List<Hit>>(emptyList()) }
     var channelLoading by remember { mutableStateOf(false) }
+    var channelLoadingMore by remember { mutableStateOf(false) }
+    var channelHasMore by remember { mutableStateOf(true) }
     var channelErr by remember { mutableStateOf<String?>(null) }
     var menuHit by remember { mutableStateOf<Hit?>(null) }
     var defQ by remember { mutableStateOf(Store.defQuality(ctx)) }
@@ -282,19 +285,45 @@ fun App(
     LaunchedEffect(channelId) {
         if (channelId == null) return@LaunchedEffect
         channelLoading = true
+        channelLoadingMore = false
+        channelHasMore = true
         channelVideos = emptyList()
+        channelBaseVideos = emptyList()
         channelErr = null
         scope.launch {
             val url = "https://www.youtube.com/channel/$channelId"
             val got = withContext(Dispatchers.IO) {
-                runCatching { Feed.channel(ctx, url, 30) }.getOrElse {
+                runCatching { Feed.channel(ctx, url, 1, 30) }.getOrElse {
                     channelErr = it.message ?: it.javaClass.simpleName
                     emptyList<Hit>()
                 }
             }
             channelBaseVideos = got
             channelVideos = sortChannelVideos(got, channelSort)
+            channelHasMore = got.size >= 30
             channelLoading = false
+        }
+    }
+
+    val loadMoreChannelVideos: () -> Unit = {
+        if (!channelLoading && !channelLoadingMore && channelHasMore && channelId != null) {
+            channelLoadingMore = true
+            scope.launch {
+                val nextStart = channelBaseVideos.size + 1
+                val url = "https://www.youtube.com/channel/$channelId"
+                val more = withContext(Dispatchers.IO) {
+                    runCatching { Feed.channel(ctx, url, nextStart, 30) }.getOrElse { emptyList() }
+                }
+                if (more.isNotEmpty()) {
+                    val merged = (channelBaseVideos + more).distinctBy { it.id }
+                    channelBaseVideos = merged
+                    channelVideos = sortChannelVideos(merged, channelSort)
+                    channelHasMore = more.size >= 30
+                } else {
+                    channelHasMore = false
+                }
+                channelLoadingMore = false
+            }
         }
     }
 
@@ -335,7 +364,7 @@ fun App(
             scope.launch {
                 val (vids, chans) = withContext(Dispatchers.IO) {
                     runCatching {
-                        Feed.search(q, Feed.LATEST, 24) to Feed.searchChannels(q, 6)
+                        Feed.search(q, Feed.LATEST, 30) to Feed.searchChannels(q, 6)
                     }.getOrElse { e ->
                         err = e.message ?: e.javaClass.simpleName
                         emptyList<Hit>() to emptyList<Feed.Channel>()
@@ -812,7 +841,7 @@ fun App(
                         modifier = Modifier.padding(top = 2.dp)
                     )
                     Text(
-                        if (channelLoading) "กำลังโหลดวิดีโอ…" else "${channelVideos.size.coerceAtMost(30)} วิดีโอ",
+                        if (channelLoading) "กำลังโหลดวิดีโอ…" else "${channelVideos.size} วิดีโอ",
                         fontSize = 11.sp,
                         color = Color(0xFF94A3B8),
                         modifier = Modifier.padding(top = 3.dp)
@@ -903,7 +932,7 @@ fun App(
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
-                    if (channelLoading) "กำลังโหลด…" else "${channelVideos.size.coerceAtMost(30)} รายการ",
+                    if (channelLoading) "กำลังโหลด…" else "${channelVideos.size} รายการ",
                     fontSize = 11.sp,
                     color = Color(0xFF94A3B8)
                 )
@@ -932,6 +961,44 @@ fun App(
                         onLongPress = { menuHit = h },
                         onSave = { Store.toggleSave(ctx, h); tick++ },
                         onDownload = { quickDownload(h, defQ) }
+                    )
+                }
+                if (channelHasMore) {
+                    Spacer(Modifier.height(10.dp))
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !channelLoadingMore, onClick = loadMoreChannelVideos)
+                    ) {
+                        Row(
+                            Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (channelLoadingMore) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color(0xFFD86A73)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("กำลังโหลดอีก 30 คลิป…", fontSize = 13.sp, color = Color(0xFFF8FAFC))
+                            } else {
+                                Icon(Icons.Default.KeyboardArrowDown, null, tint = Color(0xFFD86A73), modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("แสดงผลเพิ่มเติม (+30 รายการ)", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFFF8FAFC))
+                            }
+                        }
+                    }
+                } else if (channelVideos.size >= 30) {
+                    Text(
+                        "แสดงครบทั้งหมดแล้ว (${channelVideos.size} รายการ)",
+                        fontSize = 12.sp,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        textAlign = TextAlign.Center
                     )
                 }
             } else if (!channelLoading && channelErr == null) {
@@ -1403,7 +1470,7 @@ private val NAV = listOf(
 private suspend fun feedFor(ctx: android.content.Context, key: String): List<Hit> = when (key) {
     "" -> Feed.recommendations(ctx)
     else -> Feed.topics.firstOrNull { it.id == key }?.let {
-        Feed.search(it.query, Feed.LATEST, 24, it.id)
+        Feed.search(it.query, Feed.LATEST, 30, it.id)
     } ?: emptyList()
 }
 

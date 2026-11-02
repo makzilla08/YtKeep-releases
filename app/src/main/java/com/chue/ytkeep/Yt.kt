@@ -102,12 +102,14 @@ object Yt {
         return parseFlat(YoutubeDL.getInstance().execute(req).out ?: "")
     }
 
-    /** วิดีโอล่าสุดของช่อง (สำหรับแท็บ "ติดตาม") */
-    fun channelVideos(ctx: Context, channelUrl: String, limit: Int = 8): List<Hit> {
+    /** วิดีโอของช่อง (แบ่งหน้าครั้งละ limit รายการ เริ่มต้นที่ start) */
+    fun channelVideos(ctx: Context, channelUrl: String, start: Int = 1, limit: Int = 30): List<Hit> {
         ensure(ctx)
+        val end = (start + limit - 1).coerceAtLeast(start)
         val req = YoutubeDLRequest(channelUrl)
             .addOption("--flat-playlist")
-            .addOption("--playlist-end", limit.toString())
+            .addOption("--playlist-start", start.toString())
+            .addOption("--playlist-end", end.toString())
             .addOption("--dump-json")
             .addOption("--no-warnings")
         return parseFlat(YoutubeDL.getInstance().execute(req).out ?: "").take(limit.coerceAtLeast(0))

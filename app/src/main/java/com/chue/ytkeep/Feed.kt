@@ -60,11 +60,11 @@ object Feed {
         }
     }
 
-    /** ค้นหาแบบเร็ว: sort = LATEST (ใหม่สุด) หรือ POPULAR (ยอดวิว) */
+    /** ค้นหาแบบเร็ว: sort = LATEST (ใหม่สุด) หรือ POPULAR (ยอดวิว) แสดงครั้งละ 30 รายการ */
     fun search(
         query: String,
         sort: String = LATEST,
-        limit: Int = 20,
+        limit: Int = 30,
         topicId: String? = null
     ): List<Hit> {
         val body = JSONObject()
@@ -180,9 +180,9 @@ object Feed {
         return out.take(limit)
     }
 
-    /** วิดีโอใหม่ของช่อง (ใช้ yt-dlp เพราะ InnerTube ต้องใช้ params ที่เปลี่ยนบ่อย) */
-    fun channel(ctx: android.content.Context, url: String, limit: Int = 8): List<Hit> =
-        runCatching { Yt.channelVideos(ctx, url, limit) }.getOrDefault(emptyList())
+    /** วิดีโอของช่อง (แบ่งหน้าครั้งละ 30 รายการ, ใช้ yt-dlp) */
+    fun channel(ctx: android.content.Context, url: String, start: Int = 1, limit: Int = 30): List<Hit> =
+        runCatching { Yt.channelVideos(ctx, url, start, limit) }.getOrDefault(emptyList())
 
     fun parseHits(root: JSONObject): List<Hit> {
         val out = ArrayList<Hit>()
