@@ -25,10 +25,12 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
@@ -41,6 +43,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,6 +51,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -123,8 +127,19 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(background = Color(0xFF0E0E12))) {
-                Surface(color = Color(0xFF0E0E12), modifier = Modifier.fillMaxSize()) {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Color(0xFFB63D49),
+                    onPrimary = Color.White,
+                    secondary = Color(0xFFD86A73),
+                    onSecondary = Color.White,
+                    secondaryContainer = Color(0xFF352025),
+                    onSecondaryContainer = Color(0xFFFFDADD),
+                    background = Color(0xFF0B0B0D),
+                    surface = Color(0xFF151216)
+                )
+            ) {
+                Surface(color = Color(0xFF0B0B0D), modifier = Modifier.fillMaxSize()) {
                     App(
                         sharedUrl = sharedUrl,
                         playChoice = { url, selector, title, author ->
@@ -204,6 +219,7 @@ fun App(
     var err by remember { mutableStateOf<String?>(null) }
     var tick by remember { mutableStateOf(0) }
     var lib by remember { mutableStateOf<List<Lib.Item>>(emptyList()) }
+    var downloads by remember { mutableStateOf<List<DownloadTask>>(emptyList()) }
     var hits by remember { mutableStateOf<List<Hit>>(emptyList()) }
     var channels by remember { mutableStateOf<List<Feed.Channel>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -223,17 +239,24 @@ fun App(
     var ytver by remember { mutableStateOf("") }
     var updating by remember { mutableStateOf(false) }
     var confirmClearRecommendations by remember { mutableStateOf(false) }
+    var libraryFilter by remember { mutableStateOf("downloads") }
+    var libraryQuery by remember { mutableStateOf("") }
+    var librarySort by remember { mutableStateOf("newest") }
+    var pendingDelete by remember { mutableStateOf<Lib.Item?>(null) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(sharedUrl) { if (sharedUrl.isNotBlank()) url = sharedUrl }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(tab) {
         while (true) {
-            delay(2000)
-            tick++
+            val local = withContext(Dispatchers.IO) {
+                Lib.all(ctx) to DownloadQueue.all(ctx)
+            }
+            lib = local.first
+            downloads = local.second
+            if (tab != "library") break
+            delay(1000)
         }
-    }
-    LaunchedEffect(tick) {
-        lib = withContext(Dispatchers.IO) { Lib.all(ctx) }
     }
     val savedIds = remember(tick) { Store.saved(ctx).map { it.id }.toSet() }
     val followedIds = remember(tick) { Store.follows(ctx).map { it.second }.toSet() }
@@ -364,16 +387,22 @@ fun App(
     }
 
     Scaffold(
-        containerColor = Color(0xFF0E0E12),
+        containerColor = Color(0xFF0B0B0D),
         bottomBar = {
             NavigationBar(containerColor = Color(0xFF16161C)) {
                 NAV.forEach { (id, label, icon) ->
                     NavigationBarItem(
-                        selected = tab == id,
+                        selected = tab == id || (tab == "channel" && id == "search"),
                         onClick = {
                             when (id) {
-                                "search" -> { tab = "search"; info = null }
-                                "settings" -> { tab = "settings"; feed = emptyList() }
+                                "search" -> {
+                                    tab = "search"
+                                    info = null
+                                }
+                                "library", "follow" -> {
+                                    tab = id
+                                    feed = emptyList()
+                                }
                                 else -> loadFeed(id)
                             }
                         },
@@ -391,8 +420,40 @@ fun App(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Text("YtKeep", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7DD3FC))
-        Text("โหลดเก็บไว้ดูตอนไม่มีเน็ต · เล่นจอปิดได้", fontSize = 13.sp, color = Color(0xFF9CA3AF))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (tab == "settings") "ตั้งค่า" else "YTNx",
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFD86A73)
+                )
+                if (tab != "settings") {
+                    Text(
+                        "โหลดเก็บไว้ดูตอนไม่มีเน็ต · เล่นจอปิดได้",
+                        fontSize = 13.sp,
+                        color = Color(0xFF9CA3AF)
+                    )
+                }
+            }
+            IconButton(onClick = {
+                if (tab == "settings") {
+                    tab = "search"
+                } else {
+                    tab = "settings"
+                    feed = emptyList()
+                }
+            }) {
+                Icon(
+                    if (tab == "settings") Icons.Default.ArrowBack else Icons.Default.Settings,
+                    if (tab == "settings") "กลับ" else "ตั้งค่า",
+                    tint = Color(0xFFD86A73)
+                )
+            }
+        }
         Spacer(Modifier.height(10.dp))
         if (tab == "hot") {
             Row(
@@ -544,7 +605,7 @@ fun App(
                         Icon(
                             Icons.Default.Star,
                             if (followed) "เลิกติดตาม" else "ติดตาม",
-                            tint = if (followed) Color(0xFFFBBF24) else Color(0xFF3A3A46)
+                            tint = if (followed) Color(0xFFD86A73) else Color(0xFF3A3A46)
                         )
                     }
                 }
@@ -595,43 +656,96 @@ fun App(
 
         }
 
-        if (tab != "search" && tab != "settings" && tab != "channel") {
-            if (feedLoading) {
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) { CircularProgressIndicator() }
-            }
-            if (feed.isNotEmpty()) {
-                val title = when (tab) {
-                    "hot" -> Feed.topics.firstOrNull { it.id == cat }?.label ?: "แนะนำ"
-                    "follow" -> "ติดตาม"
-                    "saved" -> "บันทึก"
-                    else -> tab
-                }
-                SectionLabel("$title (${feed.size})")
-                feed.forEach { h ->
-                    HitRow(
-                        h = h,
-                        saved = h.id in savedIds,
-                        followed = h.channelId.isNotBlank() && h.channelId in followedIds,
-                        onOpen = {
-                            Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
-                            url = h.url
-                            tab = "search"
-                            feed = emptyList()
-                            hits = emptyList()
-                            doFetch(h.url)
-                        },
-                        onLongPress = { menuHit = h },
-                        onSave = {
-                            Store.toggleSave(ctx, h)
-                            tick++
-                        },
-                        onDownload = { menuHit = h }
+        if (tab == "hot" || tab == "follow") {
+            if (tab == "follow") {
+                val followed = Store.follows(ctx)
+                if (followed.isEmpty()) {
+                    Text(
+                        "ยังไม่ได้ติดตามช่องใด ๆ — ค้นหาช่องแล้วกดดาว (ติดตาม) ที่แถวช่องในผลค้นหา แล้วเลือกช่องที่นี่เพื่อดูวิดีโอในช่องนั้น",
+                        fontSize = 13.sp,
+                        color = Color(0xFF9CA3AF),
+                        modifier = Modifier.padding(vertical = 12.dp)
                     )
+                } else {
+                    SectionLabel("ช่องที่ติดตาม (${followed.size})")
+                    followed.forEach { (name, url) ->
+                        val cid = url.substringAfterLast('/').takeWhile { it != '?' && it != '/' }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    channelId = cid
+                                    channelName = name
+                                    tab = "channel"
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Person,
+                                null,
+                                modifier = Modifier.size(44.dp).clip(CircleShape),
+                                tint = Color(0xFFD86A73)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    name,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    url,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF9CA3AF),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Icon(
+                                Icons.Default.KeyboardArrowRight,
+                                null,
+                                tint = Color(0xFF9CA3AF)
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
                 }
-                Spacer(Modifier.height(6.dp))
+            } else {
+                if (feedLoading) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) { CircularProgressIndicator() }
+                }
+                if (feed.isNotEmpty()) {
+                    val title = Feed.topics.firstOrNull { it.id == cat }?.label ?: "แนะนำ"
+                    SectionLabel("$title (${feed.size})")
+                    feed.forEach { h ->
+                        HitRow(
+                            h = h,
+                            saved = h.id in savedIds,
+                            followed = h.channelId.isNotBlank() && h.channelId in followedIds,
+                            onOpen = {
+                                Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
+                                url = h.url
+                                tab = "search"
+                                feed = emptyList()
+                                hits = emptyList()
+                                doFetch(h.url)
+                            },
+                            onLongPress = { menuHit = h },
+                            onSave = {
+                                Store.toggleSave(ctx, h)
+                                tick++
+                            },
+                            onDownload = { menuHit = h }
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
             }
         }
 
@@ -691,6 +805,214 @@ fun App(
                 Text("ไม่มีวิดีโอในช่องนี้", color = Color(0xFF9CA3AF), modifier = Modifier.padding(vertical = 8.dp))
             }
             Spacer(Modifier.height(16.dp))
+        }
+
+        if (tab == "library") {
+            SectionLabel("ดาวน์โหลดและคลัง")
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    "downloads" to "ดาวน์โหลด",
+                    "files" to "ไฟล์ของฉัน",
+                    "saved" to "บันทึกไว้ดู"
+                ).forEach { (id, label) ->
+                    FilterChip(
+                        selected = libraryFilter == id,
+                        onClick = { libraryFilter = id },
+                        label = { Text(label, fontSize = 12.sp) }
+                    )
+                }
+            }
+
+            if (libraryFilter == "downloads") {
+                val finishedCount = downloads.count {
+                    it.state == DownloadState.COMPLETED || it.state == DownloadState.CANCELLED
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SectionLabel("คิวดาวน์โหลด (${downloads.size})")
+                    Spacer(Modifier.weight(1f))
+                    TextButton(
+                        enabled = finishedCount > 0,
+                        onClick = { DownloadQueue.clearFinished(ctx) }
+                    ) {
+                        Text("ล้างรายการเสร็จแล้ว", fontSize = 11.sp)
+                    }
+                }
+                if (downloads.isEmpty()) {
+                    Text(
+                        "ยังไม่มีรายการดาวน์โหลด",
+                        fontSize = 13.sp,
+                        color = Color(0xFF9CA3AF),
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                }
+                downloads.forEach { task ->
+                    Card2 {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    task.title,
+                                    fontSize = 14.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    "${downloadStateLabel(task.state)} · ${task.quality}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF9CA3AF)
+                                )
+                            }
+                            when (task.state) {
+                                DownloadState.QUEUED, DownloadState.RUNNING -> {
+                                    TextButton(onClick = {
+                                        DownloadService.cancel(ctx, task.id)
+                                    }) { Text("ยกเลิก") }
+                                }
+                                DownloadState.CANCELLING -> Text(
+                                    "กำลังยกเลิก",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF9CA3AF)
+                                )
+                                DownloadState.FAILED, DownloadState.CANCELLED -> {
+                                    TextButton(onClick = {
+                                        DownloadService.retry(ctx, task.id)
+                                    }) { Text("ลองใหม่") }
+                                }
+                                DownloadState.COMPLETED -> Unit
+                            }
+                        }
+                        if (task.state == DownloadState.RUNNING) {
+                            LinearProgressIndicator(
+                                progress = task.progress / 100f,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                "${task.progress}%",
+                                fontSize = 11.sp,
+                                color = Color(0xFF9CA3AF),
+                                modifier = Modifier.align(Alignment.End)
+                            )
+                        }
+                        task.error?.let {
+                            Text(it, fontSize = 12.sp, color = Color(0xFFD86A73))
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+            } else {
+                OutlinedTextField(
+                    value = libraryQuery,
+                    onValueChange = { libraryQuery = it },
+                    label = { Text(if (libraryFilter == "files") "ค้นหาไฟล์ในเครื่อง" else "ค้นหารายการบันทึก") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val sorts = if (libraryFilter == "files") {
+                        listOf("newest" to "ใหม่สุด", "name" to "ชื่อ", "size" to "ขนาด")
+                    } else {
+                        listOf("newest" to "ใหม่สุด", "name" to "ชื่อ")
+                    }
+                    sorts.forEach { (id, label) ->
+                        FilterChip(
+                            selected = librarySort == id,
+                            onClick = { librarySort = id },
+                            label = { Text(label, fontSize = 12.sp) }
+                        )
+                    }
+                }
+
+                if (libraryFilter == "files") {
+                    val filtered = Lib.filter(lib, libraryQuery, librarySort)
+                    SectionLabel("ไฟล์ในเครื่อง (${filtered.size})")
+                    if (filtered.isEmpty()) {
+                        Text(
+                            if (lib.isEmpty()) "ยังไม่มีไฟล์ดาวน์โหลด" else "ไม่พบไฟล์ที่ค้นหา",
+                            fontSize = 13.sp,
+                            color = Color(0xFF9CA3AF),
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    }
+                    filtered.forEach { item ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (item.audio) Icons.Default.MusicNote else Icons.Default.PlayArrow,
+                                null,
+                                tint = Color(0xFFD86A73)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    item.title,
+                                    fontSize = 14.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    "${item.uploader} · ${fmtBytes(item.bytes)}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF9CA3AF)
+                                )
+                            }
+                            IconButton(onClick = {
+                                playFile(File(Lib.dir(ctx), item.file), item.title, item.uploader)
+                            }) { Icon(Icons.Default.PlayArrow, "เล่น") }
+                            IconButton(onClick = { pendingDelete = item }) {
+                                Icon(Icons.Default.Delete, "ลบ", tint = Color(0xFF9CA3AF))
+                            }
+                        }
+                    }
+                } else {
+                    val savedVideos = Store.saved(ctx)
+                        .filter { hit ->
+                            val term = libraryQuery.trim()
+                            term.isBlank() ||
+                                hit.title.contains(term, ignoreCase = true) ||
+                                hit.channel.contains(term, ignoreCase = true)
+                        }
+                        .let { results ->
+                            if (librarySort == "name") results.sortedBy { it.title.lowercase() }
+                            else results.asReversed()
+                        }
+                    SectionLabel("รายการที่บันทึก (${savedVideos.size})")
+                    if (savedVideos.isEmpty()) {
+                        Text(
+                            "ยังไม่มีรายการที่บันทึก",
+                            fontSize = 13.sp,
+                            color = Color(0xFF9CA3AF),
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    }
+                    savedVideos.forEach { hit ->
+                        HitRow(
+                            h = hit,
+                            saved = true,
+                            followed = hit.channelId.isNotBlank() && hit.channelId in followedIds,
+                            onOpen = {
+                                Store.recordInteraction(ctx, hit, Store.InterestSignal.OPENED)
+                                url = hit.url
+                                tab = "search"
+                                doFetch(hit.url)
+                            },
+                            onLongPress = { menuHit = hit },
+                            onSave = { Store.toggleSave(ctx, hit); tick++ },
+                            onDownload = { menuHit = hit }
+                        )
+                    }
+                }
+            }
         }
 
         info?.let { v ->
@@ -804,52 +1126,6 @@ fun App(
             )
         }
 
-        Spacer(Modifier.height(18.dp))
-        HorizontalDivider(color = Color(0xFF26262E))
-        Spacer(Modifier.height(10.dp))
-        Text("ในเครื่อง (${lib.size})", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text("เล่นได้แม้ไม่มีเน็ต · กดเล่นแล้วปิดจอได้", fontSize = 12.sp, color = Color(0xFF9CA3AF))
-
-        if (lib.isEmpty()) {
-            Text(
-                "ยังไม่มีไฟล์ — กดไอคอนดาวน์โหลดด้านบนก่อน",
-                fontSize = 13.sp,
-                color = Color(0xFF6B7280),
-                modifier = Modifier.padding(vertical = 12.dp)
-            )
-        }
-
-        lib.forEach { item ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    if (item.audio) Icons.Default.MusicNote else Icons.Default.PlayArrow,
-                    null,
-                    tint = Color(0xFF7DD3FC)
-                )
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(item.title, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        "${if (item.audio) "เสียง" else "วิดีโอ"} · ${fmtBytes(item.bytes)}",
-                        fontSize = 11.sp,
-                        color = Color(0xFF9CA3AF)
-                    )
-                }
-                IconButton(onClick = {
-                    playFile(File(Lib.dir(ctx), item.file), item.title, item.uploader)
-                }) { Icon(Icons.Default.PlayArrow, "เล่น") }
-                IconButton(onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) { Lib.remove(ctx, item) }
-                        tick++
-                    }
-                }) { Icon(Icons.Default.Delete, "ลบ", tint = Color(0xFF9CA3AF)) }
-            }
-        }
-
         menuHit?.let { h ->
             AlertDialog(
                 onDismissRequest = { menuHit = null },
@@ -880,7 +1156,7 @@ fun App(
                                 Text(label, fontSize = 14.sp)
                                 if (Store.defQuality(ctx) == q) {
                                     Spacer(Modifier.width(6.dp))
-                                    Text("• ค่าเริ่มต้น", fontSize = 11.sp, color = Color(0xFF7DD3FC))
+                                    Text("• ค่าเริ่มต้น", fontSize = 11.sp, color = Color(0xFFD86A73))
                                 }
                             }
                         }
@@ -915,6 +1191,48 @@ fun App(
             )
         }
 
+        pendingDelete?.let { item ->
+            AlertDialog(
+                onDismissRequest = {
+                    pendingDelete = null
+                    deleteError = null
+                },
+                title = { Text("ลบไฟล์นี้หรือไม่?") },
+                text = {
+                    Column {
+                        Text(item.title)
+                        deleteError?.let {
+                            Text(
+                                it,
+                                color = Color(0xFFD86A73),
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            deleteError = null
+                            try {
+                                withContext(Dispatchers.IO) { Lib.remove(ctx, item) }
+                                lib = withContext(Dispatchers.IO) { Lib.all(ctx) }
+                                pendingDelete = null
+                            } catch (e: Exception) {
+                                deleteError = e.message ?: "ลบไฟล์ไม่สำเร็จ"
+                            }
+                        }
+                    }) { Text("ลบ", color = Color(0xFFD86A73)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        pendingDelete = null
+                        deleteError = null
+                    }) { Text("ยกเลิก") }
+                }
+            )
+        }
+
         Row(
             Modifier.fillMaxWidth().padding(top = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -943,16 +1261,10 @@ private val NAV = listOf(
     Triple("search", "ค้นหา", Icons.Default.Search),
     Triple("hot", "แนะนำ", Icons.Default.Home),
     Triple("follow", "ติดตาม", Icons.Default.Person),
-    Triple("saved", "บันทึก", Icons.Default.Favorite),
-    Triple("settings", "ตั้งค่า", Icons.Default.Settings)
+    Triple("library", "คลัง", Icons.Default.VideoLibrary)
 )
 
 private suspend fun feedFor(ctx: android.content.Context, key: String): List<Hit> = when (key) {
-    "saved" -> Store.saved(ctx)
-    "follow" -> Store.follows(ctx)
-        .flatMap { (_, u) -> runCatching { Yt.channelVideos(ctx, u, 6) }.getOrDefault(emptyList()) }
-        .distinctBy { it.id }
-        .take(30)
     "" -> Feed.recommendations(ctx)
     else -> Feed.topics.firstOrNull { it.id == key }?.let {
         Feed.search(it.query, Feed.LATEST, 24, it.id)
@@ -1002,14 +1314,14 @@ private fun HitRow(
             Icon(
                 Icons.Default.Download,
                 "ดาวน์โหลด",
-                tint = Color(0xFF7DD3FC)
+                tint = Color(0xFFD86A73)
             )
         }
         IconButton(onClick = onSave) {
             Icon(
                 if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 "บันทึก",
-                tint = if (saved) Color(0xFFF87171) else Color(0xFF9CA3AF)
+                tint = if (saved) Color(0xFFD86A73) else Color(0xFF9CA3AF)
             )
         }
     }
@@ -1031,7 +1343,7 @@ private fun ChoiceRow(
             overflow = TextOverflow.Ellipsis
         )
         IconButton(onClick = { playChoice(c.url.ifBlank { v.videoUrl }, c.selector, v.title, v.uploader) }) {
-            Icon(Icons.Default.PlayArrow, "เล่น", tint = Color(0xFF7DD3FC))
+            Icon(Icons.Default.PlayArrow, "เล่น", tint = Color(0xFFD86A73))
         }
         IconButton(onClick = { download(c, v) }) {
             Icon(Icons.Default.Download, "โหลด")
@@ -1045,7 +1357,7 @@ private fun SectionLabel(t: String) {
         t,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
-        color = Color(0xFFA5B4FC),
+        color = Color(0xFFD86A73),
         modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
     )
 }
@@ -1071,4 +1383,14 @@ private fun parseViews(s: String): Long {
         "k" -> (num * 1_000).toLong()
         else -> num.toLong()
     }
+
+}
+
+private fun downloadStateLabel(state: DownloadState): String = when (state) {
+    DownloadState.QUEUED -> "รอคิว"
+    DownloadState.RUNNING -> "กำลังดาวน์โหลด"
+    DownloadState.CANCELLING -> "กำลังยกเลิก"
+    DownloadState.COMPLETED -> "เสร็จแล้ว"
+    DownloadState.FAILED -> "ไม่สำเร็จ"
+    DownloadState.CANCELLED -> "ยกเลิกแล้ว"
 }

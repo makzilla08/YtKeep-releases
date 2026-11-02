@@ -47,15 +47,20 @@ $ANDROID_HOME/platform-tools/adb install -r YtKeep/app/build/outputs/apk/debug/a
 
 ## ก่อนบอกว่างานเสร็จ
 
-- [ ] build ผ่าน (`assembleDebug`)
-- [ ] ติดตั้ง + เปิดแอปบน emulator ได้ ไม่ crash
-- [ ] ถ้าแตะ UI: กดทดสอบ flow จริงบน emulator (ไม่ใช่แค่ build ผ่าน)
+- [x] build ผ่าน (`testDebugUnitTest assembleDebug`)
+- [x] ติดตั้ง + เปิดแอปบน emulator `t35` ได้ ไม่ crash
+- [x] ทดสอบ UI บน emulator: ค้นหา NASA → เปิดช่องได้ 30 คลิป, เปิดคลังและตั้งค่าได้
 - [ ] ถ้าแตะเรื่องดาวน์โหลด: ดึงไฟล์ออกมาดูด้วย `ffprobe` ว่ามีทั้ง video + audio
 - [ ] ถ้าแตะเรื่องเล่น: `adb shell dumpsys media_session | grep PlaybackState` ต้องเป็น `PLAYING`
-- [ ] อัปเดต `README.md` หัวข้อ "สถานะปัจจุบัน" และ "งานที่ควรทำต่อ"
+- [x] อัปเดต `README.md` หัวข้อ "สถานะปัจจุบัน" และ "งานที่ควรทำต่อ"
 
-## สถานะปัจจุบัน (2026-10-30)
-- v1.4 — build ผ่าน: เพิ่มหน้าย่อยช่อง (กดช่องในผลค้นหา → วิดีโอ 30 คลิป, เรียงใหม่สุด/ยอดวิว, ปุ่มย้อนกลับ) ยังไม่ทดสอบ UI บน emulator
+## สถานะปัจจุบัน (2026-11-02)
+- v1.5 (`versionCode 6`) เผยแพร่ที่ GitHub Release `v2.0`
+- YTNx 2.0 (`versionCode 7`) เผยแพร่ที่ GitHub Release `v2.1`; ARM APK มี arm64-v8a + armeabi-v7a และใช้ Android Debug certificate เดียวกับรุ่นก่อน
+- ทดสอบบน emulator `t35`: ค้นหา NASA, เปิดหน้าช่องและยืนยันป้าย "วิดีโอ (30)", เปิดคลัง 3 ส่วนและหน้าตั้งค่าได้
+- คิวดาวน์โหลด v2 ยังต้องทดสอบเพิ่ม: progress, cancel/retry และการกู้สถานะหลัง service เริ่มใหม่; ดู [V2-DESIGN.md](./V2-DESIGN.md)
+- หน้าย่อยช่องมีปุ่มเรียงใหม่สุด/ยอดวิวและปุ่มย้อนกลับ
+- แท็บ "ติดตาม" แสดงรายชื่อช่องให้เลือกแล้วกดเข้าไปดูวิดีโอในช่องนั้น
 - ค้นหา/ฟีดในแอปทำงาน: `Feed.kt` (InnerTube) + `Store.kt` (ความสนใจ/ติดตาม/บันทึก) + UI แท็บใน `MainActivity`
 - ทดสอบบน emulator แล้ว: แนะนำ 24 รายการ, ข่าว, กดคลิป→ดึงฟอร์แมต (1080p/720p/480p), ติดตามช่อง, บันทึก
-- ยังไม่ทดสอบเครื่องจริง (Infinix Smart 9) — screen-off/BT/ความเร็ว QuickJS
+- ยังไม่ทดสอบ APK v1.5 บนเครื่องจริง (Infinix Smart 9); USB เสียและเชื่อมต่อ ADB ผ่าน Wi-Fi ไม่สำเร็จ

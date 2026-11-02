@@ -51,8 +51,24 @@ object Lib {
 
     @Synchronized
     fun remove(ctx: Context, item: Item) {
-        File(dir(ctx), item.file).delete()
+        val file = File(dir(ctx), item.file)
+        if (file.exists() && !file.delete()) error("ลบไฟล์ไม่สำเร็จ: ${item.title}")
         write(ctx, all(ctx).filter { it.id != item.id })
+    }
+
+    fun filter(items: List<Item>, query: String, sort: String): List<Item> {
+        val term = query.trim().lowercase(java.util.Locale.ROOT)
+        val matches = items.filter {
+            term.isBlank() ||
+                it.title.lowercase(java.util.Locale.ROOT).contains(term) ||
+                it.uploader.lowercase(java.util.Locale.ROOT).contains(term)
+        }
+        return when (sort) {
+            "name" -> matches.sortedBy { it.title.lowercase(java.util.Locale.ROOT) }
+            "size" -> matches.sortedByDescending { it.bytes }
+            "oldest" -> matches.sortedBy { it.ts }
+            else -> matches.sortedByDescending { it.ts }
+        }
     }
 
     private fun write(ctx: Context, list: List<Item>) {

@@ -1,12 +1,13 @@
 # YTNx — แอปดาวน์โหลด/เล่นคลิป YouTube แบบออฟไลน์ (Android)
 
-เอกสารส่งต่อ (handoff) สำหรับคนหรือ AI คนถัดไปที่ต้องทำงานต่อ — อัปเดตล่าสุด **2026-10-30**
+เอกสารส่งต่อ (handoff) สำหรับคนหรือ AI คนถัดไปที่ต้องทำงานต่อ — อัปเดตล่าสุด **2026-11-02**
 
 > **ชื่อโปรเจค**: แอปชื่อ **YTNx** (เดิมชื่อ YtKeep) · `applicationId = com.chue.ytnx` · label "YTNx"
 > แต่ **โฟลเดอร์โปรเจค** ยังเป็น `~/android-dev/YtKeep` และ **namespace/package โค้ด** ยังเป็น `com.chue.ytkeep` (ไม่ได้ rename)
 
 ## ฟีเจอร์ค้นหา/สำรวจในแอป (2026-10-29)
-- แท็บ: ค้นหา · 🔥 แนะนำ · ข่าว · เพลง · กีฬา · เทคโนโลยี · เกม · วิทยาศาสตร์ · ความรู้ · ตลก · ทำอาหาร · ท่องเที่ยว · ธรรมชาติ · หนัง · ติดตาม · บันทึก
+- แถบหลักของ v2: ค้นหา · แนะนำ · ติดตาม · คลัง; หมวดข่าว เพลง กีฬา และหัวข้ออื่นอยู่ในหน้าคำแนะนำ
+- คลังแบ่งเป็นคิวดาวน์โหลด ไฟล์ในเครื่อง และรายการบันทึก
 - ฟีด/ค้นหาเร็วใช้ InnerTube (`Feed.kt`, API เดียวกับหน้าเว็บ YouTube ~0.5-1 วิ ไม่ต้องล็อกอิน) — ค้นหาแบบกรอง: `Feed.LATEST` (ใหม่สุด) / `Feed.POPULAR` (ยอดวิว), key ใน `Feed` เป็น public key ของเว็บ
 - **ห้ามใช้ `FEtrending`/`FEexplore`** — ตอนนี้คืน 400 INVALID_ARGUMENT (ทดสอบ 28/10/69); ใช้ search+params แทน
 - แท็บ "ติดตาม" ใช้ yt-dlp ดึงวิดีโอช่อง (`https://www.youtube.com/channel/<id>`) เพราะ browse channel ผ่าน InnerTube คืนวิดีโอเปล่า
@@ -22,7 +23,7 @@
 - ดึงข้อมูลด้วย yt-dlp: `Yt.channelVideos()` → `--flat-playlist --playlist-end 30 --dump-json` (ไม่ใช้ InnerTube browse เพราะคืนวิดีโอเปล่า)
 - เรียงได้ 2 แบบด้วย `FilterChip` — **ใหม่สุด** (ค่าเริ่มต้น, ตามลำดับ playlist) / **ยอดวิว** (sort จาก `parseViews`)
 - แต่ละแถวใช้ `HitRow` เดิม: กดเปิด (เล่นสตรีม + บันทึก signal `OPENED`), กดค้าง = เมนูดาวน์โหลด, ปุ่มบันทึก
-- สถานะ: build ผ่าน (2026-10-30) — **ยังไม่ได้กดทดสอบ UI บน emulator**
+- สถานะ: ทดสอบบน emulator t35 (2026-11-02) — เปิดช่อง NASA และยืนยันว่าหน้าแสดง 30 คลิป
 
 ## 1. เป้าหมาย
 
@@ -47,9 +48,13 @@
 | เล่นสตรีมตรงจาก YouTube | ✅ โค้ดพร้อม ยังไม่ทดสอบครบ |
 | เล่นตอนปิดจอ / คุมจาก notification | ✅ ทดสอบบน emulator (Dozing แล้ว position เดินต่อ, `cmd media_session dispatch pause/play` ทำงาน) |
 | ฟีดแนะนำเฉพาะบุคคล | ✅ ใช้คำค้น/หัวข้อ/ช่องที่ผู้ใช้สนใจ, ตัดคลิปที่เพิ่งเปิด, ล้างประวัติได้ |
-| หน้าย่อยช่อง (กดช่อง → วิดีโอช่อง + เรียงใหม่/ยอดวิว) | ✅ โค้ด + build ผ่าน (v1.4) — ยังไม่ทดสอบ UI บน emulator |
-| ทดสอบบนเครื่องจริง (arm64) | ❌ ยังไม่ได้ — ไม่มีเครื่องต่อ adb |
-| ตัด ABI x86_64 ออก + build release | ❌ ยังไม่ได้ทำ |
+| หน้าย่อยช่อง (กดช่อง → วิดีโอช่อง + เรียงใหม่/ยอดวิว) | ✅ ทดสอบบน emulator t35: แสดงไม่เกิน 30 วิดีโอ |
+| แท็บ "ติดตาม" เป็นรายชื่อช่องให้เลือก แล้วกดเข้าไปดูวิดีโอในช่องนั้น | ✅ มีใน v1.5; เคยทดสอบ flow บน emulator |
+| APK ล่าสุดที่เผยแพร่ | ✅ GitHub Release `v2.1`: YTNx 2.0 / versionCode 7, arm64-v8a + armeabi-v7a |
+| YTNx v2.0 | ✅ unit tests และ ARM build ผ่าน; ทดสอบค้นหา/หน้าช่อง (30 คลิป)/คลัง/ตั้งค่าบน t35 แล้ว |
+| คิวดาวน์โหลด v2 | ⚠️ มี progress/cancel/retry/recovery; ยังต้องทดสอบ flow เหล่านี้บน emulator |
+| ทดสอบบนเครื่องจริง (arm64) | ❌ ยังไม่ได้ — Infinix Smart 9 เชื่อมต่อ ADB ไม่ได้ |
+| APK ที่เผยแพร่ | เซ็นด้วย Android Debug certificate เดียวกับรุ่นก่อน; ยังไม่ได้ทดสอบติดตั้งบน Infinix Smart 9 |
 
 ## 3. สถาปัตยกรรม / โฟลว์
 
@@ -154,14 +159,12 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 
 ## 8. งานที่ควรทำต่อ (เรียงตามลำดับ)
 
-0. **ทดสอบหน้าย่อยช่อง (v1.4) บน emulator `t35`** — เปิดแอป → ค้นคำ → กดช่องในผลค้นหา → ตรวจว่าโหลดวิดีโอ 30 คลิปได้, สลับ ใหม่สุด/ยอดวิว ทำงาน, ปุ่มย้อนกลับกลับไปผลค้นหาเดิม, กดคลิปเล่นได้ ไม่ crash (ค้างจาก 30/10/69)
-1. Build APK สำหรับ `arm64-v8a,armeabi-v7a`, ส่งไปติดตั้งบนเครื่องจริง แล้วทดสอบ: ดาวน์โหลด 720p h264, เล่น, ปิดจอ, คุมจาก notification, หูฟัง Bluetooth
-2. ยืนยัน ABI ของ Infinix Smart 9 (`adb shell getprop ro.product.cpu.abilist`) — ถ้าเป็น arm64 ตัวเดียวตัด `armeabi-v7a` ได้อีก
-3. ทดสอบ `playChoice()` (เล่นสตรีม) กับทุกความละเอียด และเช็กว่า `Yt.direct` + `--extractor-args tv_embedded` ทำงาน
-4. ลดเวลา HD: ลอง `--cache-dir` แทน `--no-cache-dir` ของ library (ถ้าทำได้จะ cache nsig) หรือยอมรับว่า HD ช้า
-5. ปรับ UX: แสดง % ดาวน์โหลดในแอป (ตอนนี้มีแค่ notification), ปุ่มยกเลิก, ลบ temp dir เมื่อล้มเหลว, ปุ่มอัปเดต yt-dlp
-6. พิจารณา build 2 รุ่น: ไม่มี ffmpeg (~90 MB, ได้แค่ 360p muxed) และมี ffmpeg (~130 MB, HD merged)
-7. ทำ release build + เซ็น keystore ถ้าจะติดตั้งถาวร
+0. ทำตาม [ข้อกำหนดออกแบบ YTNx v2](./V2-DESIGN.md): ตรวจ state machine ของคิวดาวน์โหลดและ race ระหว่างยกเลิก/เริ่มงาน
+1. ทดสอบคิวดาวน์โหลดบน emulator ให้ครบ: เพิ่มงาน, ความคืบหน้า, ยกเลิก, ลองใหม่ และการกู้สถานะเมื่อ service เริ่มใหม่
+2. ทดสอบ Infinix Smart 9 เมื่อเชื่อมต่อได้; USB เสียและเชื่อม ADB ผ่าน Wi-Fi ไม่สำเร็จ
+3. ตรวจ `playChoice()` กับความละเอียดต่าง ๆ และ `Yt.direct` ที่ใช้ `tv_embedded`
+4. ประเมินเวลาเรียกข้อมูล HD บนเครื่องจริง; `getInfo()` ยกเลิกไม่ได้ จึงต้องไม่บล็อก UI
+5. ทดสอบ APK v2.0 ที่เผยแพร่บน Infinix Smart 9 เมื่อผู้ใช้สะดวก; ยืนยัน flow คิวดาวน์โหลดบน emulator
 
 ## 9. ผลทดสอบที่ยืนยันแล้ว (2026-10-28, emulator x86_64)
 
@@ -172,7 +175,12 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 - ปิดจอ (power → `mWakefulness=Dozing`): เล่นต่อเนื่อง position 350767→358734 ms ใน 8 วิ; สั่ง `cmd media_session dispatch pause` → PAUSED(2), `play` → PLAYING(3)
 - คลัง: `index.json` ใน `filesDir`, ไฟล์ใน `/storage/emulated/0/Android/data/com.chue.ytnx/files/media/` (path ภายนอกผูกกับ `applicationId`; เปลี่ยนชื่อเป็น `com.chue.ytnx` แล้ว ไฟล์เก่าที่ติดตั้งสมัย `com.chue.ytkeep` จะไม่ถูกเห็น)
 
-- 2026-10-30: `assembleDebug` ผ่านหลังเพิ่มหน้าย่อยช่อง (v1.4, `versionCode 5`, `applicationId com.chue.ytnx`, label "YTNx") — ยังไม่ได้ติดตั้ง/ทดสอบ UI บน emulator
+- 2026-10-30: `assembleDebug` ผ่านหลังเพิ่มหน้าย่อยช่อง (v1.4, `versionCode 5`, `applicationId com.chue.ytnx`, label "YTNx")
+- 2026-11-02: APK จาก GitHub tag `v1.9` ตรวจพบว่าเป็น app version 1.4 (`versionCode 5`); ติดตั้ง APK v1.3 แล้วอัปเดตเป็น v1.4 บน emulator ผ่าน
+- 2026-11-02: เผยแพร่ YTNx 1.5 (`versionCode 6`) ใน GitHub Release `v2.0`; unit tests, build, APK metadata, alignment และลายเซ็นผ่าน
+- 2026-11-02: APK v1.5 มี arm64-v8a + armeabi-v7a และใช้ Android Debug certificate เดียวกับ APK รุ่นก่อน; ผู้ใช้ยังต้องทดสอบติดตั้งและ flow บนเครื่องจริง
+- 2026-11-02: เผยแพร่ YTNx 2.0 (`versionCode 7`) ใน GitHub Release `v2.1`; ARM APK ใช้ลายเซ็นเดียวกับ v1.5 และ unit tests/build ผ่าน
+- 2026-11-02: emulator `t35` ยืนยันค้นหา NASA, เปิดหน้าช่องได้ 30 คลิป, เปิดคลังและตั้งค่าได้; คิวดาวน์โหลดและเครื่อง Infinix ยังรอทดสอบ
 
 ## 10. บริบทเครื่อง dev
 

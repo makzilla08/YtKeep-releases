@@ -110,7 +110,7 @@ object Yt {
             .addOption("--playlist-end", limit.toString())
             .addOption("--dump-json")
             .addOption("--no-warnings")
-        return parseFlat(YoutubeDL.getInstance().execute(req).out ?: "")
+        return parseFlat(YoutubeDL.getInstance().execute(req).out ?: "").take(limit.coerceAtLeast(0))
     }
 
     private fun parseFlat(out: String): List<Hit> = out.lineSequence().mapNotNull { line ->
