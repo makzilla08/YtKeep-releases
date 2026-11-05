@@ -96,10 +96,12 @@
 - [x] ปรับ `Feed.kt`: ปรับ `channel` และ `search` ให้รองรับชุดละ 30 รายการ
 - [x] ปรับ `MainActivity.kt`: เพิ่ม State `channelLoadingMore`, `channelHasMore`, ฟังก์ชัน `loadMoreChannelVideos()` และปุ่ม "แสดงผลเพิ่มเติม (+30 รายการ)"
 - [x] บิลด์และรันชุดทดสอบ `testDebugUnitTest` และ `assembleDebug` ผ่าน 100% (APK ขนาด 115 MB)
-- [ ] ติดตั้งคอมโพเนนต์ `MiniPlayerBar` (เชื่อมต่อ `MediaController`) ในหน้าหลัก
+- [x] ติดตั้ง `MiniPlayerBar` ในหน้าหลัก เชื่อมต่อ `MediaController` พร้อมเล่น/หยุดชั่วคราว/ปิด และแสดงความคืบหน้า
+- [x] เพิ่มตัวเลือกแสดง/ซ่อนหัวข้อความสนใจ; หัวข้อที่ซ่อนจะไม่ปรากฏเป็นแท็บและไม่ถูกเลือกในฟีดแนะนำ
 - [ ] เปลี่ยน UI ถาดเลือกความละเอียดเป็น `ModalBottomSheet`
 - [ ] เพิ่มการ์ด Storage Health Meter ในแท็บคลัง
-- [ ] ทดสอบการทำงานร่วมกับ Emulator `t35` และเครื่องจริง
+- [x] ทดสอบบน Emulator `t35`: เปิด/ซ่อนหัวข้อความสนใจ และตรวจ Mini-Player เล่น/หยุด/ปิด
+- [ ] ทดสอบบนเครื่องจริง Infinix Smart 9
 
 ---
 
@@ -111,4 +113,3 @@
 | [`V2-DESIGN.md`](./V2-DESIGN.md) | ข้อกำหนดเดิมของ v2 (สำหรับอ้างอิงประวัติการพัฒนา) |
 | [Prototype HTML](file:///home/chuedekleb/.gemini/antigravity/brain/7556978b-9493-43c2-9711-610edfe292d2/ytnx_v3_ui_prototype.html) | ไฟล์ต้นแบบ Interactive Prototype จำลองหน้าจอบนมือถือ |
 | [`app/build/outputs/apk/debug/app-debug.apk`](file:///home/chuedekleb/android-dev/YtKeep/app/build/outputs/apk/debug/app-debug.apk) | APK บิลด์ล่าสุดที่รวมตรรกะบราวซ์ 30 คลิป + โหลดเพิ่มแล้ว |
-

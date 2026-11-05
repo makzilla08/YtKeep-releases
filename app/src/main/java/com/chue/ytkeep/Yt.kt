@@ -44,6 +44,7 @@ data class Info(
 )
 
 object Yt {
+    const val FLASH = true
     const val YT_ARGS_KEY = "--extractor-args"
     const val YT_CLIENT_VR = "youtube:player_client=tv_embedded"
 

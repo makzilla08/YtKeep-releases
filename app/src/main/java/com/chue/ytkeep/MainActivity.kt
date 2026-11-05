@@ -49,7 +49,20 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -57,6 +70,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -72,6 +86,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -98,6 +113,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
@@ -111,7 +127,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
 
     private lateinit var future: ListenableFuture<MediaController>
-    private var controller: MediaController? = null
+    private var controller: MediaController? by mutableStateOf(null)
     private var pending: ((MediaController) -> Unit)? = null
     private var sharedUrl by mutableStateOf("")
 
@@ -124,8 +140,9 @@ class MainActivity : ComponentActivity() {
         future = MediaController.Builder(this, token).buildAsync()
         future.addListener({
             runCatching {
-                controller = future.get()
-                pending?.invoke(controller!!)
+                val connectedController = future.get()
+                controller = connectedController
+                pending?.invoke(connectedController)
                 pending = null
             }
         }, ContextCompat.getMainExecutor(this))
@@ -153,8 +170,9 @@ class MainActivity : ComponentActivity() {
                 Surface(color = Color(0xFF0B0B0D), modifier = Modifier.fillMaxSize()) {
                     App(
                         sharedUrl = sharedUrl,
-                        playChoice = { url, selector, title, author ->
-                            playChoice(url, selector, title, author)
+                        mediaController = controller,
+                        playChoice = { url, selector, title, author, thumb ->
+                            playChoice(url, selector, title, author, thumb)
                         },
                         playFile = { f, t, a -> play(Uri.fromFile(f).toString(), t, a) },
                         download = { c, info ->
@@ -172,10 +190,21 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra(Intent.EXTRA_TEXT)?.let { sharedUrl = extractUrl(it) }
     }
 
-    private fun playChoice(url: String, selector: String, title: String, author: String) {
+    private fun playChoice(
+        url: String,
+        selector: String,
+        title: String,
+        author: String,
+        thumb: String?
+    ) {
         val isPage = url.contains("youtube.com/watch") || url.contains("youtu.be/")
+        val videoId = if (isPage) {
+            url.substringAfter("v=", "").substringBefore("&").ifBlank {
+                url.substringAfterLast("/").substringBefore("?")
+            }
+        } else ""
         if (!isPage) {
-            play(url, title, author)
+            play(url, title, author, thumb, videoId)
             return
         }
         lifecycleScope.launch {
@@ -184,26 +213,34 @@ class MainActivity : ComponentActivity() {
                     Yt.direct(this@MainActivity, url, if (selector.contains("+")) "b" else selector)
                 }.getOrNull()
             }
-            if (direct != null) play(direct, title, author)
+            if (direct != null) play(direct, title, author, thumb, videoId)
             else Toast.makeText(this@MainActivity, "ดึงลิงก์เล่นไม่สำเร็จ", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun play(url: String, title: String, author: String) {
+    private fun play(url: String, title: String, author: String, thumb: String? = null, videoId: String = "") {
         val run = { c: MediaController ->
+            val metadata = MediaMetadata.Builder()
+                .setTitle(title)
+                .setArtist(author)
+            if (!thumb.isNullOrBlank()) metadata.setArtworkUri(Uri.parse(thumb))
             c.setMediaItem(
                 MediaItem.Builder()
                     .setUri(url)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder().setTitle(title).setArtist(author).build()
-                    )
+                    .setMediaMetadata(metadata.build())
                     .build()
             )
             c.prepare()
             c.play()
         }
         controller?.let(run) ?: run { pending = run }
-        startActivity(Intent(this, PlayerActivity::class.java))
+        startActivity(
+            Intent(this, PlayerActivity::class.java).apply {
+                putExtra("title", title)
+                putExtra("author", author)
+                putExtra("videoId", videoId)
+            }
+        )
     }
 
     override fun onDestroy() {
@@ -215,7 +252,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun App(
     sharedUrl: String,
-    playChoice: (String, String, String, String) -> Unit,
+    mediaController: MediaController?,
+    playChoice: (String, String, String, String, String?) -> Unit,
     playFile: (File, String, String) -> Unit,
     download: (Choice, Info) -> Unit
 ) {
@@ -262,6 +300,55 @@ fun App(
     var librarySort by remember { mutableStateOf("newest") }
     var pendingDelete by remember { mutableStateOf<Lib.Item?>(null) }
     var deleteError by remember { mutableStateOf<String?>(null) }
+    var disabledTopicIds by remember { mutableStateOf(Store.disabledTopicIds(ctx)) }
+    var customTopics by remember { mutableStateOf(Store.customTopics(ctx)) }
+    var newTopicText by remember { mutableStateOf("") }
+    var channelCategory by remember { mutableStateOf("videos") }
+    var channelLoadingAll by remember { mutableStateOf(false) }
+    var selectedPlaylist by remember { mutableStateOf<Store.Playlist?>(null) }
+    var showNewPlaylistDialog by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+    var playlistToAddHit by remember { mutableStateOf<Hit?>(null) }
+
+    fun channelCategoryUrl(cid: String, category: String): String {
+        val base = if (cid.startsWith("UC") || cid.startsWith("HC")) {
+            "https://www.youtube.com/channel/$cid"
+        } else {
+            "https://www.youtube.com/@$cid"
+        }
+        return when (category) {
+            "shorts" -> "$base/shorts"
+            "streams" -> "$base/streams"
+            "playlists" -> "$base/playlists"
+            else -> "$base/videos"
+        }
+    }
+
+    val openChannel: (channelId: String, channelName: String, channelThumb: String?, origin: String) -> Unit =
+        { cid, cname, cthumb, origin ->
+            channelId = cid
+            channelName = cname
+            channelThumb = cthumb
+            channelSubs = ""
+            channelOrigin = origin
+            channelCategory = "videos"
+            tab = "channel"
+        }
+
+    val playHitsContinuous: (List<Hit>, String) -> Unit = { list, queueTitle ->
+        if (list.isNotEmpty()) {
+            QueueManager.playQueue(ctx, mediaController, list, 0, queueTitle) {
+                val first = list.first()
+                ctx.startActivity(
+                    Intent(ctx, PlayerActivity::class.java).apply {
+                        putExtra("title", first.title)
+                        putExtra("author", first.channel)
+                        putExtra("videoId", first.id)
+                    }
+                )
+            }
+        }
+    }
 
     LaunchedEffect(sharedUrl) { if (sharedUrl.isNotBlank()) url = sharedUrl }
 
@@ -282,18 +369,19 @@ fun App(
         ytver = withContext(Dispatchers.IO) { runCatching { Yt.version(ctx) }.getOrDefault("?") }
     }
 
-    LaunchedEffect(channelId) {
+    LaunchedEffect(channelId, channelCategory) {
         if (channelId == null) return@LaunchedEffect
         channelLoading = true
         channelLoadingMore = false
+        channelLoadingAll = false
         channelHasMore = true
         channelVideos = emptyList()
         channelBaseVideos = emptyList()
         channelErr = null
         scope.launch {
-            val url = "https://www.youtube.com/channel/$channelId"
+            val targetUrl = channelCategoryUrl(channelId!!, channelCategory)
             val got = withContext(Dispatchers.IO) {
-                runCatching { Feed.channel(ctx, url, 1, 30) }.getOrElse {
+                runCatching { Feed.channel(ctx, targetUrl, 1, 30) }.getOrElse {
                     channelErr = it.message ?: it.javaClass.simpleName
                     emptyList<Hit>()
                 }
@@ -310,9 +398,9 @@ fun App(
             channelLoadingMore = true
             scope.launch {
                 val nextStart = channelBaseVideos.size + 1
-                val url = "https://www.youtube.com/channel/$channelId"
+                val targetUrl = channelCategoryUrl(channelId!!, channelCategory)
                 val more = withContext(Dispatchers.IO) {
-                    runCatching { Feed.channel(ctx, url, nextStart, 30) }.getOrElse { emptyList() }
+                    runCatching { Feed.channel(ctx, targetUrl, nextStart, 30) }.getOrElse { emptyList() }
                 }
                 if (more.isNotEmpty()) {
                     val merged = (channelBaseVideos + more).distinctBy { it.id }
@@ -323,6 +411,39 @@ fun App(
                     channelHasMore = false
                 }
                 channelLoadingMore = false
+            }
+        }
+    }
+
+    val loadAllChannelVideos: () -> Unit = {
+        if (!channelLoading && !channelLoadingMore && !channelLoadingAll && channelHasMore && channelId != null) {
+            channelLoadingAll = true
+            scope.launch {
+                val targetUrl = channelCategoryUrl(channelId!!, channelCategory)
+                var currentList = channelBaseVideos
+                while (channelLoadingAll) {
+                    val nextStart = currentList.size + 1
+                    val more = withContext(Dispatchers.IO) {
+                        runCatching { Feed.channel(ctx, targetUrl, nextStart, 30) }.getOrElse { emptyList() }
+                    }
+                    if (more.isEmpty()) {
+                        channelHasMore = false
+                        break
+                    }
+                    val merged = (currentList + more).distinctBy { it.id }
+                    if (merged.size == currentList.size) {
+                        channelHasMore = false
+                        break
+                    }
+                    currentList = merged
+                    channelBaseVideos = currentList
+                    channelVideos = sortChannelVideos(currentList, channelSort)
+                    if (more.size < 30) {
+                        channelHasMore = false
+                        break
+                    }
+                }
+                channelLoadingAll = false
             }
         }
     }
@@ -343,10 +464,12 @@ fun App(
                     .onFailure { err = it.message ?: it.javaClass.simpleName }
                 loading = false
                 if (!ok) return@launch
-                hdLoading = true
-                runCatching { withContext(Dispatchers.IO) { Yt.fetchHd(ctx, videoUrl) } }
-                    .onSuccess { hd -> if (hd.video.size > (info?.video?.size ?: 0)) info = hd }
-                hdLoading = false
+                if (!Yt.FLASH) {
+                    hdLoading = true
+                    runCatching { withContext(Dispatchers.IO) { Yt.fetchHd(ctx, videoUrl) } }
+                        .onSuccess { hd -> if (hd.video.size > (info?.video?.size ?: 0)) info = hd }
+                    hdLoading = false
+                }
             }
         }
     }
@@ -425,10 +548,21 @@ fun App(
         }
     }
 
+    val setTopicEnabled: (Feed.Topic, Boolean) -> Unit = { topic, enabled ->
+        Store.setTopicEnabled(ctx, topic.id, enabled)
+        disabledTopicIds = Store.disabledTopicIds(ctx)
+        if (!enabled && cat == topic.id) cat = ""
+        if (tab == "hot") loadFeed("hot")
+    }
+
     Scaffold(
         containerColor = Color(0xFF0B0B0D),
         bottomBar = {
             Column {
+                MiniPlayerBar(
+                    controller = mediaController,
+                    onExpand = { ctx.startActivity(Intent(ctx, PlayerActivity::class.java)) }
+                )
                 HorizontalDivider(color = Color(0xFF302126))
                 NavigationBar(containerColor = Color(0xFF101013)) {
                     NAV.forEach { (id, label, icon) ->
@@ -561,7 +695,7 @@ fun App(
                     },
                     label = { Text("🔥 แนะนำ", fontSize = 12.sp) }
                 )
-                Feed.topics.forEach { topic ->
+                Feed.enabledTopics(ctx, disabledTopicIds).forEach { topic ->
                     FilterChip(
                         selected = cat == topic.id,
                         onClick = {
@@ -671,13 +805,21 @@ fun App(
                 Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionLabel("วิดีโอ")
+                SectionLabel("วิดีโอ (${dispHits.size})")
                 Spacer(Modifier.weight(1f))
-                Text(
-                    "${dispHits.size} รายการ",
-                    fontSize = 12.sp,
-                    color = Color(0xFF94A3B8)
-                )
+                if (dispHits.isNotEmpty()) {
+                    Button(
+                        onClick = { playHitsContinuous(dispHits, "ผลค้นหา: $url") },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFE24A56)),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("เล่นต่อเนื่อง", fontSize = 11.sp)
+                    }
+                }
             }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -708,7 +850,8 @@ fun App(
                     },
                     onLongPress = { menuHit = h },
                     onSave = { Store.toggleSave(ctx, h); tick++ },
-                    onDownload = { quickDownload(h, defQ) }
+                    onDownload = { quickDownload(h, defQ) },
+                    onOpenChannel = { openChannel(h.channelId.ifBlank { h.channel }, h.channel, null, tab) }
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -789,8 +932,25 @@ fun App(
                     ) { CircularProgressIndicator() }
                 }
                 if (feed.isNotEmpty()) {
-                    val title = Feed.topics.firstOrNull { it.id == cat }?.label ?: "แนะนำ"
-                    SectionLabel("$title (${feed.size})")
+                    val title = Feed.allTopics(ctx).firstOrNull { it.id == cat }?.label ?: "แนะนำ"
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SectionLabel("$title (${feed.size})")
+                        Spacer(Modifier.weight(1f))
+                        Button(
+                            onClick = { playHitsContinuous(feed, "แนะนำ: $title") },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFE24A56)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("เล่นต่อเนื่อง", fontSize = 11.sp)
+                        }
+                    }
                     feed.forEach { h ->
                         VideoCard(
                             hit = h,
@@ -809,7 +969,8 @@ fun App(
                                 Store.toggleSave(ctx, h)
                                 tick++
                             },
-                            onDownload = { menuHit = h }
+                            onDownload = { menuHit = h },
+                            onOpenChannel = { openChannel(h.channelId.ifBlank { h.channel }, h.channel, null, tab) }
                         )
                     }
                     Spacer(Modifier.height(6.dp))
@@ -862,24 +1023,19 @@ fun App(
             }
             HorizontalDivider(color = Color(0xFF302126))
             Row(
-                Modifier.fillMaxWidth().height(46.dp),
-                verticalAlignment = Alignment.CenterVertically
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Column(
-                    Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Bottom
-                ) {
-                    Text(
-                        "วิดีโอ",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFD86A73),
-                        modifier = Modifier.padding(bottom = 7.dp)
-                    )
-                    Spacer(
-                        Modifier.width(64.dp).height(3.dp)
-                            .background(Color(0xFFB63D49), RoundedCornerShape(2.dp))
+                listOf(
+                    "videos" to "🎬 วิดีโอ",
+                    "shorts" to "⚡ Shorts",
+                    "streams" to "🔴 ไลฟ์",
+                    "playlists" to "📋 เพลย์ลิสต์"
+                ).forEach { (catId, label) ->
+                    FilterChip(
+                        selected = channelCategory == catId,
+                        onClick = { channelCategory = catId },
+                        label = { Text(label, fontSize = 12.sp) }
                     )
                 }
             }
@@ -931,6 +1087,28 @@ fun App(
                     }
                 }
                 Spacer(Modifier.weight(1f))
+                if (channelVideos.isNotEmpty()) {
+                    Button(
+                        onClick = {
+                            val catTitle = when (channelCategory) {
+                                "shorts" -> "Shorts"
+                                "streams" -> "ไลฟ์"
+                                "playlists" -> "เพลย์ลิสต์"
+                                else -> "วิดีโอ"
+                            }
+                            playHitsContinuous(channelVideos, "$channelName - $catTitle")
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFE24A56)),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("เล่นทั้งหมด", fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
                 Text(
                     if (channelLoading) "กำลังโหลด…" else "${channelVideos.size} รายการ",
                     fontSize = 11.sp,
@@ -965,30 +1143,66 @@ fun App(
                 }
                 if (channelHasMore) {
                     Spacer(Modifier.height(10.dp))
-                    Surface(
-                        color = Color(0xFF1E293B),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = !channelLoadingMore, onClick = loadMoreChannelVideos)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            color = Color(0xFF1E293B),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(enabled = !channelLoadingMore && !channelLoadingAll, onClick = loadMoreChannelVideos)
                         ) {
-                            if (channelLoadingMore) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color(0xFFD86A73)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("กำลังโหลดอีก 30 คลิป…", fontSize = 13.sp, color = Color(0xFFF8FAFC))
-                            } else {
-                                Icon(Icons.Default.KeyboardArrowDown, null, tint = Color(0xFFD86A73), modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("แสดงผลเพิ่มเติม (+30 รายการ)", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFFF8FAFC))
+                            Row(
+                                Modifier.padding(vertical = 12.dp, horizontal = 10.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (channelLoadingMore) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color(0xFFD86A73)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("กำลังโหลด…", fontSize = 12.sp, color = Color(0xFFF8FAFC))
+                                } else {
+                                    Icon(Icons.Default.KeyboardArrowDown, null, tint = Color(0xFFD86A73), modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("+30 คลิป", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFFF8FAFC))
+                                }
+                            }
+                        }
+
+                        Surface(
+                            color = Color(0xFF812E38),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(onClick = {
+                                    if (channelLoadingAll) channelLoadingAll = false
+                                    else loadAllChannelVideos()
+                                })
+                        ) {
+                            Row(
+                                Modifier.padding(vertical = 12.dp, horizontal = 10.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (channelLoadingAll) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.White
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("หยุด (${channelVideos.size})", fontSize = 12.sp, color = Color.White)
+                                } else {
+                                    Icon(Icons.Default.Download, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("โหลดจนหมด", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White)
+                                }
                             }
                         }
                     }
@@ -1020,11 +1234,15 @@ fun App(
                 listOf(
                     "downloads" to "ดาวน์โหลด",
                     "files" to "ไฟล์ของฉัน",
-                    "saved" to "บันทึกไว้ดู"
+                    "saved" to "บันทึกไว้ดู",
+                    "playlists" to "เพลย์ลิสต์"
                 ).forEach { (id, label) ->
                     FilterChip(
                         selected = libraryFilter == id,
-                        onClick = { libraryFilter = id },
+                        onClick = {
+                            libraryFilter = id
+                            selectedPlaylist = null
+                        },
                         label = { Text(label, fontSize = 12.sp) }
                     )
                 }
@@ -1108,6 +1326,208 @@ fun App(
                     }
                     Spacer(Modifier.height(6.dp))
                 }
+            } else if (libraryFilter == "playlists") {
+                val playlists = Store.playlists(ctx)
+                val currentPl = selectedPlaylist?.let { sp ->
+                    playlists.firstOrNull { it.id == sp.id } ?: sp
+                }
+                if (currentPl != null) {
+                    // แสดงรายละเอียดเพลย์ลิสต์ที่เลือก
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { selectedPlaylist = null }) {
+                            Icon(Icons.Default.ArrowBack, "กลับ", tint = Color.White)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                currentPl.name,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "${currentPl.items.size} คลิป",
+                                fontSize = 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        IconButton(onClick = {
+                            Store.deletePlaylist(ctx, currentPl.id)
+                            selectedPlaylist = null
+                            tick++
+                        }) {
+                            Icon(Icons.Default.Delete, "ลบเพลย์ลิสต์", tint = Color(0xFF9CA3AF))
+                        }
+                    }
+                    if (currentPl.items.isNotEmpty()) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { playHitsContinuous(currentPl.items, currentPl.name) },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFE24A56)),
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("เล่นทั้งหมด", fontSize = 12.sp)
+                            }
+                            Button(
+                                onClick = { playHitsContinuous(currentPl.items.shuffled(), "${currentPl.name} (สุ่ม)") },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF231B22)),
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Icon(Icons.Default.Shuffle, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("เล่นสุ่ม", fontSize = 12.sp)
+                            }
+                        }
+                        currentPl.items.forEach { hit ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(Modifier.weight(1f)) {
+                                    VideoCard(
+                                        hit = hit,
+                                        saved = hit.id in savedIds,
+                                        downloadLabel = "ดาวน์โหลด",
+                                        onOpen = {
+                                            Store.recordInteraction(ctx, hit, Store.InterestSignal.OPENED)
+                                            url = hit.url
+                                            tab = "search"
+                                            doFetch(hit.url)
+                                        },
+                                        onLongPress = { menuHit = hit },
+                                        onSave = { Store.toggleSave(ctx, hit); tick++ },
+                                        onDownload = { menuHit = hit },
+                                        onOpenChannel = { openChannel(hit.channelId.ifBlank { hit.channel }, hit.channel, null, tab) }
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        Store.removeFromPlaylist(ctx, currentPl.id, hit.id)
+                                        tick++
+                                    },
+                                    modifier = Modifier.padding(start = 2.dp)
+                                ) {
+                                    Icon(Icons.Default.Delete, "ลบจากเพลย์ลิสต์", tint = Color(0xFF71717A), modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            "ยังไม่มีคลิปในเพลย์ลิสต์นี้ — แตะเมนูตัวเลือกที่คลิปใดๆ แล้วเลือก 'เพิ่มลงในเพลย์ลิสต์'",
+                            fontSize = 13.sp,
+                            color = Color(0xFF9CA3AF),
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    }
+                } else {
+                    // หน้ารวมเพลย์ลิสต์
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SectionLabel("เพลย์ลิสต์ของฉัน (${playlists.size})")
+                        Spacer(Modifier.weight(1f))
+                        Button(
+                            onClick = {
+                                newPlaylistName = ""
+                                showNewPlaylistDialog = true
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFE24A56)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                        ) {
+                            Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("สร้างใหม่", fontSize = 11.sp)
+                        }
+                    }
+                    if (playlists.isEmpty()) {
+                        Text(
+                            "ยังไม่มีเพลย์ลิสต์ — แตะปุ่ม 'สร้างใหม่' หรือบันทึกจากคิวที่กำลังเล่น",
+                            fontSize = 13.sp,
+                            color = Color(0xFF9CA3AF),
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    }
+                    playlists.forEach { pl ->
+                        Surface(
+                            color = Color(0xFF151216),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable { selectedPlaylist = pl }
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    Modifier.size(54.dp).clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF281318)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    val firstThumb = pl.items.firstOrNull()?.thumb
+                                    if (!firstThumb.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = firstThumb,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.QueueMusic,
+                                            null,
+                                            tint = Color(0xFFE24A56),
+                                            modifier = Modifier.size(26.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        pl.name,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        "${pl.items.size} คลิป",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF94A3B8),
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
+                                if (pl.items.isNotEmpty()) {
+                                    IconButton(onClick = { playHitsContinuous(pl.items, pl.name) }) {
+                                        Icon(Icons.Default.PlayArrow, "เล่น", tint = Color(0xFFE24A56))
+                                    }
+                                }
+                                IconButton(onClick = {
+                                    Store.deletePlaylist(ctx, pl.id)
+                                    tick++
+                                }) {
+                                    Icon(Icons.Default.Delete, "ลบ", tint = Color(0xFF71717A), modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 OutlinedTextField(
                     value = libraryQuery,
@@ -1190,7 +1610,26 @@ fun App(
                             if (librarySort == "name") results.sortedBy { it.title.lowercase() }
                             else results.asReversed()
                         }
-                    SectionLabel("รายการที่บันทึก (${savedVideos.size})")
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SectionLabel("รายการที่บันทึก (${savedVideos.size})")
+                        Spacer(Modifier.weight(1f))
+                        if (savedVideos.isNotEmpty()) {
+                            Button(
+                                onClick = { playHitsContinuous(savedVideos, "รายการที่บันทึก") },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFE24A56)),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.height(32.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("เล่นทั้งหมด", fontSize = 11.sp)
+                            }
+                        }
+                    }
                     if (savedVideos.isEmpty()) {
                         Text(
                             "ยังไม่มีรายการที่บันทึก",
@@ -1212,7 +1651,8 @@ fun App(
                             },
                             onLongPress = { menuHit = hit },
                             onSave = { Store.toggleSave(ctx, hit); tick++ },
-                            onDownload = { menuHit = hit }
+                            onDownload = { menuHit = hit },
+                            onOpenChannel = { openChannel(hit.channelId.ifBlank { hit.channel }, hit.channel, null, tab) }
                         )
                     }
                 }
@@ -1250,7 +1690,15 @@ fun App(
                 Spacer(Modifier.height(10.dp))
                 v.video.firstOrNull()?.let { best ->
                     Button(
-                        onClick = { playChoice(best.url.ifBlank { v.videoUrl }, best.selector, v.title, v.uploader) },
+                        onClick = {
+                            playChoice(
+                                best.url.ifBlank { v.videoUrl },
+                                best.selector,
+                                v.title,
+                                v.uploader,
+                                v.thumb
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.PlayArrow, null)
@@ -1295,6 +1743,70 @@ fun App(
                 fontSize = 12.sp,
                 color = Color(0xFF9CA3AF)
             )
+            SectionLabel("หัวข้อความสนใจ")
+            Text(
+                "เลือกหัวข้อที่ต้องการเห็นเป็นแท็บและใช้ในฟีดแนะนำ ปิดหัวข้อที่ไม่สนใจได้ และเปิดกลับได้ทุกเมื่อ",
+                fontSize = 12.sp,
+                color = Color(0xFF9CA3AF)
+            )
+            (Feed.topics + customTopics).forEach { topic ->
+                val enabled = topic.id !in disabledTopicIds
+                val isCustom = topic.id.startsWith("custom:")
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Checkbox(
+                        checked = enabled,
+                        onCheckedChange = { setTopicEnabled(topic, it) }
+                    )
+                    Text(
+                        topic.label,
+                        modifier = Modifier.weight(1f).clickable {
+                            setTopicEnabled(topic, !enabled)
+                        },
+                        fontSize = 14.sp
+                    )
+                    if (isCustom) {
+                        IconButton(onClick = {
+                            Store.removeCustomTopic(ctx, topic.id)
+                            customTopics = Store.customTopics(ctx)
+                            disabledTopicIds = Store.disabledTopicIds(ctx)
+                            if (cat == topic.id) cat = ""
+                        }) {
+                            Icon(Icons.Default.Delete, "ลบ", tint = Color(0xFF94A3B8))
+                        }
+                    } else {
+                        Text(
+                            if (enabled) "แสดง" else "ซ่อน",
+                            fontSize = 11.sp,
+                            color = if (enabled) Color(0xFFD86A73) else Color(0xFF9CA3AF)
+                        )
+                    }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = newTopicText,
+                    onValueChange = { newTopicText = it },
+                    label = { Text("เพิ่มหัวข้อใหม่") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                    val added = Store.addCustomTopic(ctx, newTopicText)
+                    if (added != null) {
+                        customTopics = Store.customTopics(ctx)
+                        newTopicText = ""
+                    }
+                }, enabled = newTopicText.isNotBlank()) {
+                    Text("เพิ่ม")
+                }
+            }
             TextButton(onClick = { confirmClearRecommendations = true }) {
                 Text("ล้างประวัติแนะนำ")
             }
@@ -1354,6 +1866,63 @@ fun App(
                 title = { Text(h.title, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis) },
                 text = {
                     Column {
+                        // หมวดหมู่การเล่นและคิว
+                        Text(
+                            "คิวและการเล่น",
+                            fontSize = 12.sp,
+                            color = Color(0xFFE24A56),
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                QueueManager.playNext(h)
+                                Toast.makeText(ctx, "แทรกเล่นต่อจากนี้แล้ว", Toast.LENGTH_SHORT).show()
+                                menuHit = null
+                            }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.SkipNext, null, tint = Color(0xFFD86A73), modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("เล่นต่อจากนี้ (Play Next)", fontSize = 13.sp)
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                QueueManager.addToQueue(h)
+                                Toast.makeText(ctx, "เพิ่มลงในคิวแล้ว", Toast.LENGTH_SHORT).show()
+                                menuHit = null
+                            }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.QueueMusic, null, tint = Color(0xFFD86A73), modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("เพิ่มลงในคิว (Add to Queue)", fontSize = 13.sp)
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                playlistToAddHit = h
+                                menuHit = null
+                            }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.PlaylistAdd, null, tint = Color(0xFFD86A73), modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("เพิ่มลงในเพลย์ลิสต์…", fontSize = 13.sp)
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                menuHit = null
+                                openChannel(h.channelId.ifBlank { h.channel }, h.channel, null, tab)
+                            }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AccountCircle, null, tint = Color(0xFFD86A73), modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("ไปยังหน้าช่อง (${h.channel})", fontSize = 13.sp)
+                        }
+
+                        HorizontalDivider(color = Color(0xFF302126), modifier = Modifier.padding(vertical = 6.dp))
+
                         Text(
                             "ดาวน์โหลดด้วยคุณภาพ",
                             fontSize = 12.sp,
@@ -1372,10 +1941,10 @@ fun App(
                                 Modifier.fillMaxWidth().clickable {
                                     menuHit = null
                                     quickDownload(h, q)
-                                }.padding(vertical = 10.dp),
+                                }.padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(label, fontSize = 14.sp)
+                                Text(label, fontSize = 13.sp)
                                 if (Store.defQuality(ctx) == q) {
                                     Spacer(Modifier.width(6.dp))
                                     Text("• ค่าเริ่มต้น", fontSize = 11.sp, color = Color(0xFFD86A73))
@@ -1390,12 +1959,109 @@ fun App(
             )
         }
 
+        // Dialog เลือกเพลย์ลิสต์ที่จะเพิ่มคลิป
+        playlistToAddHit?.let { hit ->
+            val allPlaylists = Store.playlists(ctx)
+            AlertDialog(
+                onDismissRequest = { playlistToAddHit = null },
+                title = { Text("เพิ่มลงในเพลย์ลิสต์", fontSize = 16.sp) },
+                text = {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(hit.title, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color(0xFF9CA3AF))
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                newPlaylistName = ""
+                                showNewPlaylistDialog = true
+                            }.padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Add, null, tint = Color(0xFFE24A56), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("+ สร้างเพลย์ลิสต์ใหม่", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFE24A56))
+                        }
+                        HorizontalDivider(color = Color(0xFF302126))
+                        if (allPlaylists.isEmpty()) {
+                            Text(
+                                "ยังไม่มีเพลย์ลิสต์ แตะสร้างเพลย์ลิสต์ใหม่ด้านบน",
+                                fontSize = 12.sp,
+                                color = Color(0xFF71717A),
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        } else {
+                            allPlaylists.forEach { pl ->
+                                Row(
+                                    Modifier.fillMaxWidth().clickable {
+                                        Store.addToPlaylist(ctx, pl.id, hit)
+                                        Toast.makeText(ctx, "เพิ่มลงใน \"${pl.name}\" แล้ว", Toast.LENGTH_SHORT).show()
+                                        playlistToAddHit = null
+                                        tick++
+                                    }.padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.QueueMusic, null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(pl.name, fontSize = 14.sp, color = Color.White)
+                                        Text("${pl.items.size} คลิป", fontSize = 10.sp, color = Color(0xFF71717A))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { playlistToAddHit = null }) { Text("ยกเลิก") }
+                }
+            )
+        }
+
+        // Dialog สร้างเพลย์ลิสต์ใหม่
+        if (showNewPlaylistDialog) {
+            AlertDialog(
+                onDismissRequest = { showNewPlaylistDialog = false },
+                title = { Text("สร้างเพลย์ลิสต์ใหม่") },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = newPlaylistName,
+                            onValueChange = { newPlaylistName = it },
+                            label = { Text("ชื่อเพลย์ลิสต์") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val initial = playlistToAddHit?.let { listOf(it) } ?: emptyList()
+                            val pl = Store.createPlaylist(ctx, newPlaylistName, initial)
+                            Toast.makeText(ctx, "สร้างเพลย์ลิสต์ \"${pl.name}\" แล้ว", Toast.LENGTH_SHORT).show()
+                            showNewPlaylistDialog = false
+                            playlistToAddHit = null
+                            tick++
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFE24A56))
+                    ) {
+                        Text("สร้าง")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showNewPlaylistDialog = false }) { Text("ยกเลิก") }
+                }
+            )
+        }
+
         if (confirmClearRecommendations) {
             AlertDialog(
                 onDismissRequest = { confirmClearRecommendations = false },
                 title = { Text("ล้างประวัติแนะนำ?") },
                 text = {
-                    Text("แอปจะลบคำค้นที่สนใจ คลิปที่เปิดล่าสุด และคะแนนช่อง แต่จะไม่เลิกติดตามช่อง")
+                    Text(
+                        "แอปจะลบคำค้นที่สนใจ คลิปที่เปิดล่าสุด และคะแนนช่อง " +
+                            "แต่จะไม่เลิกติดตามช่องหรือเปลี่ยนหัวข้อความสนใจที่เลือกแสดง"
+                    )
                 },
                 confirmButton = {
                     TextButton(onClick = {
@@ -1469,7 +2135,7 @@ private val NAV = listOf(
 
 private suspend fun feedFor(ctx: android.content.Context, key: String): List<Hit> = when (key) {
     "" -> Feed.recommendations(ctx)
-    else -> Feed.topics.firstOrNull { it.id == key }?.let {
+    else -> Feed.allTopics(ctx).firstOrNull { it.id == key }?.let {
         Feed.search(it.query, Feed.LATEST, 30, it.id)
     } ?: emptyList()
 }
@@ -1598,6 +2264,181 @@ private fun ChannelResultCard(
 }
 
 @Composable
+private fun MiniPlayerBar(
+    controller: MediaController?,
+    onExpand: () -> Unit
+) {
+    var hasItem by remember(controller) {
+        mutableStateOf(controller?.currentMediaItem != null)
+    }
+    var isPlaying by remember(controller) {
+        mutableStateOf(controller?.isPlaying == true)
+    }
+    var title by remember(controller) {
+        mutableStateOf(controller?.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty())
+    }
+    var artist by remember(controller) {
+        mutableStateOf(controller?.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty())
+    }
+    var artworkUri by remember(controller) {
+        mutableStateOf(controller?.currentMediaItem?.mediaMetadata?.artworkUri?.toString())
+    }
+    var position by remember(controller) { mutableStateOf(0L) }
+    var duration by remember(controller) { mutableStateOf(0L) }
+
+    DisposableEffect(controller) {
+        if (controller == null) {
+            onDispose { }
+        } else {
+            val listener = object : Player.Listener {
+                override fun onEvents(player: Player, events: Player.Events) {
+                    hasItem = player.currentMediaItem != null
+                    isPlaying = player.isPlaying
+                    title = player.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty()
+                    artist = player.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
+                    artworkUri = player.currentMediaItem?.mediaMetadata?.artworkUri?.toString()
+                    position = player.currentPosition.coerceAtLeast(0L)
+                    duration = player.duration.takeIf { it > 0L } ?: 0L
+                }
+            }
+            controller.addListener(listener)
+            onDispose { controller.removeListener(listener) }
+        }
+    }
+
+    LaunchedEffect(controller, hasItem, isPlaying) {
+        while (hasItem && isPlaying) {
+            position = controller?.currentPosition?.coerceAtLeast(0L) ?: 0L
+            duration = controller?.duration?.takeIf { it > 0L } ?: 0L
+            delay(500)
+        }
+    }
+
+    if (!hasItem) return
+
+    val progress = if (duration > 0L) {
+        (position.toFloat() / duration).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    Surface(
+        color = Color(0xFF1C1A25),
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2F2A3D)),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
+            .clickable(onClick = onExpand)
+    ) {
+        Box {
+            Row(
+                Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black)
+                ) {
+                    if (!artworkUri.isNullOrBlank()) {
+                        AsyncImage(
+                            model = artworkUri,
+                            contentDescription = "ภาพปก ${title.ifBlank { "สื่อที่กำลังเล่น" }}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color(0xFFD86A73),
+                            modifier = Modifier.align(Alignment.Center).size(24.dp)
+                        )
+                    }
+                    if (isPlaying) {
+                        Box(
+                            Modifier.fillMaxSize().background(Color(0x66000000)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                Modifier.size(8.dp).background(Color(0xFFE24A56), CircleShape)
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f).clickable(onClick = onExpand)) {
+                    Text(
+                        title.ifBlank { "กำลังเล่น" },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFF8FAFC)
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            artist.ifBlank { "YTNx" },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = 10.sp,
+                            color = Color(0xFFB7AEB3),
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Text(" · ", fontSize = 10.sp, color = Color(0xFFB7AEB3))
+                        Text(
+                            if (isPlaying) "กำลังเล่นจอปิด" else "หยุดชั่วคราว",
+                            maxLines = 1,
+                            fontSize = 10.sp,
+                            color = if (isPlaying) Color(0xFF34D399) else Color(0xFFB7AEB3)
+                        )
+                        if (QueueManager.state.items.isNotEmpty()) {
+                            Text(
+                                " (${QueueManager.state.currentIndex + 1}/${QueueManager.state.items.size})",
+                                fontSize = 10.sp,
+                                color = Color(0xFFE24A56),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+                if (QueueManager.state.hasNext) {
+                    val localCtx = LocalContext.current
+                    IconButton(onClick = { QueueManager.skipToNext(localCtx, controller) }) {
+                        Icon(Icons.Default.SkipNext, "ถัดไป", tint = Color.White)
+                    }
+                }
+                IconButton(
+                    onClick = {
+                        if (controller?.isPlaying == true) controller?.pause()
+                        else controller?.play()
+                    },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = Color(0xFFE24A56),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Icon(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "หยุดชั่วคราว" else "เล่นต่อ",
+                        tint = Color(0xFFF8FAFC)
+                    )
+                }
+                IconButton(onClick = {
+                    controller?.stop()
+                    controller?.clearMediaItems()
+                }) {
+                    Icon(Icons.Default.Close, contentDescription = "ปิดการเล่น", tint = Color(0xFFB7AEB3))
+                }
+            }
+            LinearProgressIndicator(
+                progress = progress,
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp),
+                color = Color(0xFFE24A56),
+                trackColor = Color.Transparent
+            )
+        }
+    }
+}
+
+@Composable
 private fun ChannelBanner(name: String, thumb: String?) {
     Box(
         Modifier.fillMaxWidth()
@@ -1647,7 +2488,8 @@ private fun VideoCard(
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
     onSave: () -> Unit,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    onOpenChannel: (() -> Unit)? = null
 ) {
     Surface(
         color = Color(0xFF151216),
@@ -1699,17 +2541,46 @@ private fun VideoCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        listOfNotNull(
-                            hit.views.takeIf { it.isNotBlank() },
-                            hit.age.takeIf { it.isNotBlank() }
-                        ).joinToString(" · ").ifBlank { hit.channel },
-                        fontSize = 10.sp,
-                        color = Color(0xFF94A3B8),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 3.dp)
-                    )
+                    // แสดงชื่อช่องเด่นชัด พร้อมไอคอน และคลิกเข้าหน้าช่องได้
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .then(
+                                if (onOpenChannel != null) Modifier.clickable(onClick = onOpenChannel)
+                                else Modifier
+                            )
+                    ) {
+                        Icon(
+                            Icons.Default.AccountCircle,
+                            contentDescription = "ช่อง",
+                            tint = Color(0xFFE24A56),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            hit.channel.ifBlank { "ไม่ระบุช่อง" },
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (onOpenChannel != null) Color(0xFFF1F5F9) else Color(0xFF94A3B8),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    val stats = listOfNotNull(
+                        hit.views.takeIf { it.isNotBlank() },
+                        hit.age.takeIf { it.isNotBlank() }
+                    ).joinToString(" · ")
+                    if (stats.isNotBlank()) {
+                        Text(
+                            stats,
+                            fontSize = 9.sp,
+                            color = Color(0xFF94A3B8),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(
@@ -1754,13 +2625,23 @@ private fun VideoCard(
                     }
                 }
             }
-            IconButton(onClick = onSave, modifier = Modifier.size(34.dp)) {
-                Icon(
-                    if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    "บันทึก",
-                    tint = if (saved) Color(0xFFD86A73) else Color(0xFF94A3B8),
-                    modifier = Modifier.size(18.dp)
-                )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(onClick = onSave, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        "บันทึก",
+                        tint = if (saved) Color(0xFFD86A73) else Color(0xFF94A3B8),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onLongPress, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        "ตัวเลือกเพิ่มเติม",
+                        tint = Color(0xFF94A3B8),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }
@@ -1770,7 +2651,7 @@ private fun VideoCard(
 private fun ChoiceRow(
     c: Choice,
     v: Info,
-    playChoice: (String, String, String, String) -> Unit,
+    playChoice: (String, String, String, String, String?) -> Unit,
     download: (Choice, Info) -> Unit
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1781,7 +2662,11 @@ private fun ChoiceRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        IconButton(onClick = { playChoice(c.url.ifBlank { v.videoUrl }, c.selector, v.title, v.uploader) }) {
+        IconButton(
+            onClick = {
+                playChoice(c.url.ifBlank { v.videoUrl }, c.selector, v.title, v.uploader, v.thumb)
+            }
+        ) {
             Icon(Icons.Default.PlayArrow, "เล่น", tint = Color(0xFFD86A73))
         }
         IconButton(onClick = { download(c, v) }) {

@@ -9,11 +9,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.chue.ytnx"
+        applicationId = "com.chue.ytnx.flash"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "3.0"
+        versionCode = 12
+        versionName = "3.3 Flash"
 
         ndk {
             // ค่าเริ่มต้นมี x86_64 ไว้ทดสอบบน emulator; build สำหรับมือถือใช้ -Pabis=arm64-v8a,armeabi-v7a

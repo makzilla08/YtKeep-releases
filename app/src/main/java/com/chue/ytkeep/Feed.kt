@@ -36,6 +36,15 @@ object Feed {
         Topic("movies", "🎬 หนัง", "รีวิวหนัง")
     )
 
+    fun allTopics(ctx: android.content.Context): List<Topic> =
+        topics + Store.customTopics(ctx)
+
+    fun enabledTopics(disabledTopicIds: Set<String>): List<Topic> =
+        topics.filterNot { it.id in disabledTopicIds }
+
+    fun enabledTopics(ctx: android.content.Context, disabledTopicIds: Set<String>): List<Topic> =
+        allTopics(ctx).filterNot { it.id in disabledTopicIds }
+
     private const val KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
     private const val CONTEXT =
         """{"client":{"clientName":"WEB","clientVersion":"2.20260101.00.00","hl":"th","gl":"TH"}}"""
@@ -81,20 +90,25 @@ object Feed {
 
     suspend fun recommendations(ctx: android.content.Context, limit: Int = 30): List<Hit> =
         coroutineScope {
-            val preferences = Store.recommendationPreferences(ctx)
-            val chosenTopics = preferences.topics.entries
-                .sortedByDescending { it.value }
-                .mapNotNull { score -> topics.firstOrNull { it.id == score.key }?.let { it to score.value } }
-                .take(2)
-            val preferredTopicIds = chosenTopics.mapTo(HashSet()) { it.first.id }
-            val today = java.time.LocalDate.now().dayOfYear - 1
-            val explorationCount = if (
-                preferences.queries.isEmpty() && chosenTopics.isEmpty()
-            ) 5 else 1
-            val explorationTopics = (0 until topics.size)
-                .map { topics[(today + it) % topics.size] }
-                .filterNot { it.id in preferredTopicIds }
-                .take(explorationCount)
+    val preferences = Store.recommendationPreferences(ctx)
+    val disabledTopics = Store.disabledTopicIds(ctx)
+    val all = allTopics(ctx)
+    val availableTopics = enabledTopics(ctx, disabledTopics)
+    val chosenTopics = preferences.topics.entries
+        .sortedByDescending { it.value }
+        .mapNotNull { score ->
+            availableTopics.firstOrNull { it.id == score.key }?.let { it to score.value }
+        }
+        .take(2)
+    val preferredTopicIds = chosenTopics.mapTo(HashSet()) { it.first.id }
+    val today = java.time.LocalDate.now().dayOfYear - 1
+    val explorationCount = if (
+        preferences.queries.isEmpty() && chosenTopics.isEmpty()
+    ) 5 else 1
+    val explorationTopics = (0 until all.size)
+        .map { all[(today + it) % all.size] }
+        .filter { it in availableTopics && it.id !in preferredTopicIds }
+        .take(explorationCount)
 
             data class Request(val query: String, val topicId: String?, val weight: Int)
 
