@@ -31,7 +31,7 @@ object Store {
     )
 
     /** ตัวเลือกคุณภาพเริ่มต้น: audio (ประหยัดสุด) / 360 / 480 / 720 / 1080 / best */
-    fun defQuality(ctx: Context): String = sp(ctx).getString(K_QUALITY, if (Yt.FLASH) "360" else "audio") ?: if (Yt.FLASH) "360" else "audio"
+    fun defQuality(ctx: Context): String = sp(ctx).getString(K_QUALITY, "audio") ?: "audio"
 
     fun setDefQuality(ctx: Context, q: String) {
         sp(ctx).edit().putString(K_QUALITY, q).apply()
