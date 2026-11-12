@@ -24,12 +24,13 @@ object Lib {
     fun all(ctx: Context): List<Item> {
         val f = indexFile(ctx)
         if (!f.exists()) return emptyList()
+        val base = dir(ctx)
         return runCatching {
             val a = JSONArray(f.readText())
             (0 until a.length()).mapNotNull { i ->
                 val o = a.getJSONObject(i)
                 val name = o.optString("file")
-                if (name.isBlank() || !File(dir(ctx), name).exists()) return@mapNotNull null
+                if (name.isBlank() || !File(base, name).exists()) return@mapNotNull null
                 Item(
                     id = o.optString("id"),
                     title = o.optString("title"),

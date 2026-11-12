@@ -3,16 +3,29 @@ package com.chue.ytkeep
 internal object RecommendationRanker {
     data class RankedHit(val hit: Hit, val score: Int)
 
+    /** ช่วงอายูคลิป: สด (<= 30 วัน) / กลาง (<= 90 วัน) / เก่า (เกิน) */
+    const val FRESH_DAYS = 30
+    const val STALE_DAYS = 90
+
     fun rank(
         candidates: List<RankedHit>,
         recentVideoIds: Set<String>,
-        limit: Int
+        limit: Int,
+        freshDays: Int = FRESH_DAYS,
+        staleDays: Int = STALE_DAYS
     ): List<Hit> {
         if (limit <= 0) return emptyList()
 
-        val ordered = candidates.sortedWith(
-            compareByDescending<RankedHit> { it.score }
-                .thenBy { it.hit.id }
+        val ordered = candidates
+            .map { it to (Freshness.days(it.hit.age) ?: 0) }
+            .sortedWith(
+                compareByDescending<Pair<RankedHit, Int>> { it.first.score }
+                    .thenBy { it.first.hit.id }
+            )
+        val tiers = listOf(
+            ordered.filter { it.second <= freshDays }.map { it.first },
+            ordered.filter { it.second > freshDays && it.second <= staleDays }.map { it.first },
+            ordered.filter { it.second > staleDays }.map { it.first }
         )
         val selected = LinkedHashMap<String, Hit>()
 
@@ -49,10 +62,13 @@ internal object RecommendationRanker {
             }
         }
 
-        append(ordered, excludeRecent = true, channelLimit = 2, sourceLimit = 4)
-        append(ordered, excludeRecent = true, channelLimit = 3, sourceLimit = 12)
-        append(ordered, excludeRecent = false, channelLimit = 3, sourceLimit = 12)
-        append(ordered, excludeRecent = false, channelLimit = null, sourceLimit = null)
+        // เติมของใหม่ให้เต็มก่อน แล้วค่อยไล่ลงไปของกลาง/ของเก่า (ของเก่าจะโผล่เมื่อของใหม่ไม่พอจริง ๆ)
+        tiers.forEach { tier ->
+            append(tier, excludeRecent = true, channelLimit = 2, sourceLimit = 4)
+            append(tier, excludeRecent = true, channelLimit = 3, sourceLimit = 12)
+            append(tier, excludeRecent = false, channelLimit = 3, sourceLimit = 12)
+        }
+        append(ordered.map { it.first }, excludeRecent = false, channelLimit = null, sourceLimit = null)
         return selected.values.toList()
     }
 

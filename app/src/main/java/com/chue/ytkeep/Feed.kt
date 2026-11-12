@@ -1,15 +1,10 @@
 package com.chue.ytkeep
 
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import java.util.concurrent.TimeUnit
 
 /**
  * ค้นหา/ฟีดผ่าน InnerTube (API เดียวกับหน้าเว็บ YouTube) — เร็ว ~0.5-1 วิ ไม่ต้องล็อกอิน
@@ -18,6 +13,9 @@ import java.util.concurrent.TimeUnit
 object Feed {
     const val LATEST = "CAISAhAB"   // เรียงตามวันที่อัปโหลด, เฉพาะวิดีโอ
     const val POPULAR = "CAMSAhAB"  // เรียงตามยอดวิว, เฉพาะวิดีโอ
+
+    /** จำนวนคำค้นล่าสุดที่ใช้สร้างฟีดแนะนำ (ใหม่สุดได้น้ำหนักมากสุด) */
+    private const val RECENT_QUERY_REQUESTS = 3
 
     data class Topic(val id: String, val label: String, val query: String)
 
@@ -45,30 +43,6 @@ object Feed {
     fun enabledTopics(ctx: android.content.Context, disabledTopicIds: Set<String>): List<Topic> =
         allTopics(ctx).filterNot { it.id in disabledTopicIds }
 
-    private const val KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
-    private const val CONTEXT =
-        """{"client":{"clientName":"WEB","clientVersion":"2.20260101.00.00","hl":"th","gl":"TH"}}"""
-
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)
-        .build()
-
-    private val json = "application/json; charset=utf-8".toMediaType()
-
-    private fun post(path: String, body: JSONObject): JSONObject {
-        val req = Request.Builder()
-            .url("https://www.youtube.com/youtubei/v1/$path?key=$KEY&prettyPrint=false")
-            .header("User-Agent", UA)
-            .post(body.toString().toRequestBody(json))
-            .build()
-        http.newCall(req).execute().use { r ->
-            val text = r.body?.string().orEmpty()
-            if (!r.isSuccessful) throw IllegalStateException("YouTube ตอบ ${r.code}")
-            return JSONObject(text)
-        }
-    }
-
     /** ค้นหาแบบเร็ว: sort = LATEST (ใหม่สุด) หรือ POPULAR (ยอดวิว) แสดงครั้งละ 30 รายการ */
     fun search(
         query: String,
@@ -77,10 +51,10 @@ object Feed {
         topicId: String? = null
     ): List<Hit> {
         val body = JSONObject()
-            .put("context", JSONObject(CONTEXT))
+            .put("context", InnerTubeClient.context())
             .put("query", query)
         if (sort.isNotBlank()) body.put("params", sort)
-        return parseHits(post("search", body)).take(limit).map {
+        return parseHits(InnerTubeClient.post("search", body)).take(limit).map {
             it.copy(
                 sourceQuery = query.takeIf { topicId == null },
                 sourceTopicId = topicId
@@ -112,20 +86,19 @@ object Feed {
 
             data class Request(val query: String, val topicId: String?, val weight: Int)
 
+            // คำค้นล่าสุดมาก่อน (ใหม่สุด = น้ำหนักสูงสุด) แล้วค่อยตามด้วยหัวข้อที่สนใจ
+            val recentQueries = preferences.recentQueries(RECENT_QUERY_REQUESTS)
             val requests = buildList {
-                preferences.queries.entries
-                    .sortedByDescending { it.value }
-                    .take(2)
-                    .forEach { (query, score) ->
-                        add(Request(query, null, score.coerceIn(1, 6)))
-                    }
+                recentQueries.forEachIndexed { index, query ->
+                    add(Request(query, null, (6 - index).coerceAtLeast(3)))
+                }
                 chosenTopics.forEach { (topic, score) ->
                     add(Request(topic.query, topic.id, score.coerceIn(1, 6)))
                 }
                 explorationTopics.forEach { topic ->
                     add(Request(topic.query, topic.id, 1))
                 }
-            }.distinctBy { it.query.lowercase() }.take(5)
+            }.distinctBy { it.query.lowercase() }.take(RECENT_QUERY_REQUESTS + chosenTopics.size + explorationTopics.size)
 
             val results = requests.map { request ->
                 async(Dispatchers.IO) {
@@ -161,7 +134,7 @@ object Feed {
 
     /** ค้นหาช่อง (พิมพ์ชื่อช่อง) */
     fun searchChannels(query: String, limit: Int = 6): List<Channel> {
-        val body = JSONObject().put("context", JSONObject(CONTEXT)).put("query", query)
+        val body = JSONObject().put("context", InnerTubeClient.context()).put("query", query)
         val out = ArrayList<Channel>()
         val seen = HashSet<String>()
         fun walk(o: Any?) {
@@ -190,7 +163,7 @@ object Feed {
                 is org.json.JSONArray -> for (i in 0 until o.length()) walk(o.opt(i))
             }
         }
-        walk(post("search", body))
+        walk(InnerTubeClient.post("search", body))
         return out.take(limit)
     }
 

@@ -1,13 +1,13 @@
 package com.chue.ytkeep
 
 import android.content.ComponentName
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -77,6 +77,8 @@ class PlayerActivity : ComponentActivity() {
     private var title by mutableStateOf("")
     private var author by mutableStateOf("")
     private var videoId by mutableStateOf("")
+    private var currentMediaId by mutableStateOf("")
+    private var mediaListener: Player.Listener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,11 +91,32 @@ class PlayerActivity : ComponentActivity() {
         val token = SessionToken(this, ComponentName(this, PlayerService::class.java))
         future = MediaController.Builder(this, token).buildAsync()
         future.addListener({
-            runCatching { controller = future.get() }
+            runCatching {
+                future.get().also { mediaController ->
+                    controller = mediaController
+                    currentMediaId = mediaController.currentMediaItem?.mediaId.orEmpty()
+                    val listener = object : Player.Listener {
+                        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                            currentMediaId = mediaItem?.mediaId.orEmpty()
+                        }
+                    }
+                    mediaListener = listener
+                    mediaController.addListener(listener)
+                }
+            }
         }, ContextCompat.getMainExecutor(this))
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(background = Color.Black)) {
+                val activeVideoId = if (currentMediaId.isNotBlank()) {
+                    MediaIdentity.youtubeVideoId(currentMediaId)
+                } else {
+                    MediaIdentity.youtubeVideoId(videoId)
+                }
+                var showComments by remember { mutableStateOf(false) }
+                LaunchedEffect(activeVideoId) {
+                    if (activeVideoId == null) showComments = false
+                }
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
@@ -110,27 +133,27 @@ class PlayerActivity : ComponentActivity() {
                     Overlay(
                         title = title,
                         author = author,
-                        videoId = videoId,
+                        videoId = activeVideoId.orEmpty(),
                         controller = controller,
                         onBack = { finish() },
-                        onOpenComments = {
-                            val vid = videoId.ifBlank {
-                                controller?.currentMediaItem?.mediaId.orEmpty()
-                            }
-                            if (vid.isNotBlank()) {
-                                startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$vid"))
-                                )
-                            }
-                        }
+                        onOpenComments = { if (activeVideoId != null) showComments = true }
                     )
+                    if (showComments && activeVideoId != null) {
+                        PlayerCommentsSheet(
+                            videoId = activeVideoId,
+                            onDismiss = { showComments = false }
+                        )
+                    }
                 }
             }
         }
     }
 
     override fun onDestroy() {
-        if (::future.isInitialized) MediaController.releaseFuture(future)
+        if (::future.isInitialized) {
+            mediaListener?.let { controller?.removeListener(it) }
+            MediaController.releaseFuture(future)
+        }
         super.onDestroy()
     }
 }
@@ -154,9 +177,7 @@ private fun Overlay(
         ?: title.ifBlank { controller?.mediaMetadata?.title?.toString().orEmpty() }
     val currentAuthor = qState.currentItem?.channel?.ifBlank { null }
         ?: author.ifBlank { controller?.mediaMetadata?.artist?.toString().orEmpty() }
-    val currentVid = qState.currentItem?.id ?: videoId.ifBlank {
-        controller?.currentMediaItem?.mediaId.orEmpty()
-    }
+    val currentVid = videoId
 
     Column(Modifier.fillMaxSize().padding(12.dp)) {
         // แถบหัวเรื่องด้านบน

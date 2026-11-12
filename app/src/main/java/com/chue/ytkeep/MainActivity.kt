@@ -174,7 +174,7 @@ class MainActivity : ComponentActivity() {
                         playChoice = { url, selector, title, author, thumb ->
                             playChoice(url, selector, title, author, thumb)
                         },
-                        playFile = { f, t, a -> play(Uri.fromFile(f).toString(), t, a) },
+                        playFile = { f, t, a, id -> play(Uri.fromFile(f).toString(), t, a, videoId = id) },
                         download = { c, info ->
                             DownloadService.enqueue(this, c, info)
                             Toast.makeText(this, "เริ่มดาวน์โหลดแล้ว — ปิดจอได้เลย", Toast.LENGTH_SHORT).show()
@@ -226,6 +226,7 @@ class MainActivity : ComponentActivity() {
             if (!thumb.isNullOrBlank()) metadata.setArtworkUri(Uri.parse(thumb))
             c.setMediaItem(
                 MediaItem.Builder()
+                    .setMediaId(MediaIdentity.forPlayback(videoId, url)?.mediaId.orEmpty())
                     .setUri(url)
                     .setMediaMetadata(metadata.build())
                     .build()
@@ -254,7 +255,7 @@ fun App(
     sharedUrl: String,
     mediaController: MediaController?,
     playChoice: (String, String, String, String, String?) -> Unit,
-    playFile: (File, String, String) -> Unit,
+    playFile: (File, String, String, String) -> Unit,
     download: (Choice, Info) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -272,7 +273,8 @@ fun App(
     var hits by remember { mutableStateOf<List<Hit>>(emptyList()) }
     var channels by remember { mutableStateOf<List<Feed.Channel>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
-    var tab by remember { mutableStateOf("search") }
+    var tab by remember { mutableStateOf("hot") }
+    var settingsOrigin by remember { mutableStateOf("hot") }
     var cat by remember { mutableStateOf("") }
     var channelId by remember { mutableStateOf<String?>(null) }
     var channelName by remember { mutableStateOf("") }
@@ -347,6 +349,32 @@ fun App(
                     }
                 )
             }
+        }
+    }
+
+    /** เพิ่มไฟล์ที่ดาวน์โหลดไว้ลง "คิวที่กำลังเล่น" (หากยังไม่มีคิว จะเริ่มเล่นเป็นคิวใหม่) */
+    val addLocalToQueue: (Lib.Item) -> Unit = { item ->
+        val localHit = Hit(
+            id = item.id,
+            title = item.title,
+            channel = item.uploader,
+            seconds = 0,
+            thumb = null,
+            localPath = File(Lib.dir(ctx), item.file).absolutePath
+        )
+        if (QueueManager.state.items.isEmpty()) {
+            playHitsContinuous(listOf(localHit), "ไฟล์ในเครื่อง")
+            Toast.makeText(ctx, "เริ่มคิวใหม่จากไฟล์ในเครื่อง", Toast.LENGTH_SHORT).show()
+        } else {
+            val before = QueueManager.state.items.size
+            QueueManager.addToQueue(localHit)
+            val after = QueueManager.state.items.size
+            Toast.makeText(
+                ctx,
+                if (after > before) "เพิ่มลงเพลย์ลิสต์ที่กำลังเล่นแล้ว ($after คลิป)"
+                else "คลิปนี้อยู่ในเพลย์ลิสต์แล้ว",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -495,6 +523,10 @@ fun App(
                 }
                 hits = vids
                 channels = chans
+                if (vids.isNotEmpty() || chans.isNotEmpty()) {
+                    withContext(Dispatchers.IO) { Store.recordSearch(ctx, q) }
+                    tick++
+                }
                 if (vids.isEmpty() && chans.isEmpty() && err == null)
                     err = "ไม่พบผลลัพธ์ ลองคำอื่น หรือพิมพ์ชื่อช่องให้ตรงขึ้น"
                 searching = false
@@ -546,6 +578,11 @@ fun App(
             if (got.isEmpty() && err == null) err = "ว่างเปล่า — ลองอัปเดต yt-dlp หรือติดตามช่องก่อน"
             feedLoading = false
         }
+    }
+
+    // เปิดแอปแล้วเจอหน้าแรก (แนะนำ) ทันที — เดิมต้องกดแท็บเอง
+    LaunchedEffect(Unit) {
+        if (feed.isEmpty() && !feedLoading) loadFeed("hot")
     }
 
     val setTopicEnabled: (Feed.Topic, Boolean) -> Unit = { topic, enabled ->
@@ -615,7 +652,8 @@ fun App(
             if (tab == "channel" || tab == "settings") {
                 IconButton(onClick = {
                     if (tab == "settings") {
-                        tab = "search"
+                        tab = settingsOrigin
+                        if (settingsOrigin == "hot" && feed.isEmpty()) loadFeed("hot")
                     } else {
                         tab = channelOrigin
                         channelId = null
@@ -633,6 +671,7 @@ fun App(
             Spacer(Modifier.weight(1f))
             if (tab != "settings" && tab != "channel") {
                 IconButton(onClick = {
+                    settingsOrigin = if (tab == "hot" || tab == "search" || tab == "follow" || tab == "library") tab else "hot"
                     tab = "settings"
                     feed = emptyList()
                 }) {
@@ -1249,9 +1288,11 @@ fun App(
             }
 
             if (libraryFilter == "downloads") {
-                val finishedCount = downloads.count {
+                val doneCount = downloads.count {
                     it.state == DownloadState.COMPLETED || it.state == DownloadState.CANCELLED
                 }
+                val failedCount = downloads.count { it.state == DownloadState.FAILED }
+                val clearable = doneCount + failedCount
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -1259,10 +1300,17 @@ fun App(
                     SectionLabel("คิวดาวน์โหลด (${downloads.size})")
                     Spacer(Modifier.weight(1f))
                     TextButton(
-                        enabled = finishedCount > 0,
-                        onClick = { DownloadQueue.clearFinished(ctx) }
+                        enabled = clearable > 0,
+                        onClick = { DownloadQueue.clearTerminal(ctx) }
                     ) {
-                        Text("ล้างรายการเสร็จแล้ว", fontSize = 11.sp)
+                        Text(
+                            when {
+                                failedCount > 0 && doneCount > 0 -> "ล้างที่จบแล้ว ($clearable)"
+                                failedCount > 0 -> "ล้างที่ล้มเหลว ($failedCount)"
+                                else -> "ล้างที่เสร็จแล้ว ($doneCount)"
+                            },
+                            fontSize = 11.sp
+                        )
                     }
                 }
                 if (downloads.isEmpty()) {
@@ -1305,7 +1353,18 @@ fun App(
                                         DownloadService.retry(ctx, task.id)
                                     }) { Text("ลองใหม่") }
                                 }
-                                DownloadState.COMPLETED -> Unit
+                                DownloadState.COMPLETED -> {
+                                    val localItem = lib.firstOrNull { it.id == task.id }
+                                    if (localItem != null) {
+                                        IconButton(onClick = { addLocalToQueue(localItem) }) {
+                                            Icon(
+                                                Icons.Default.PlaylistAdd,
+                                                "เพิ่มลงเพลย์ลิสต์ที่กำลังเล่น",
+                                                tint = Color(0xFFD86A73)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                         if (task.state == DownloadState.RUNNING) {
@@ -1591,8 +1650,15 @@ fun App(
                                 )
                             }
                             IconButton(onClick = {
-                                playFile(File(Lib.dir(ctx), item.file), item.title, item.uploader)
+                                playFile(File(Lib.dir(ctx), item.file), item.title, item.uploader, item.id)
                             }) { Icon(Icons.Default.PlayArrow, "เล่น") }
+                            IconButton(onClick = { addLocalToQueue(item) }) {
+                                Icon(
+                                    Icons.Default.PlaylistAdd,
+                                    "เพิ่มลงเพลย์ลิสต์ที่กำลังเล่น",
+                                    tint = Color(0xFF9CA3AF)
+                                )
+                            }
                             IconButton(onClick = { pendingDelete = item }) {
                                 Icon(Icons.Default.Delete, "ลบ", tint = Color(0xFF9CA3AF))
                             }
@@ -2127,8 +2193,8 @@ fun App(
 }
 
 private val NAV = listOf(
-    Triple("search", "ค้นหา", Icons.Default.Search),
     Triple("hot", "แนะนำ", Icons.Default.Home),
+    Triple("search", "ค้นหา", Icons.Default.Search),
     Triple("follow", "ติดตาม", Icons.Default.Person),
     Triple("library", "คลัง", Icons.Default.VideoLibrary)
 )

@@ -27,8 +27,17 @@ object Store {
         val queries: Map<String, Int> = emptyMap(),
         val topics: Map<String, Int> = emptyMap(),
         val channels: Map<String, Int> = emptyMap(),
-        val recentVideoIds: List<String> = emptyList()
-    )
+        val recentVideoIds: List<String> = emptyList(),
+        /** คำค้น -> เวลาที่ใช้ค้นล่าสุด (epoch ms) เพื่อให้ฟีดแนะนำเกาะคำค้นใหม่ ๆ ก่อน */
+        val queryTimes: Map<String, Long> = emptyMap()
+    ) {
+        /** คำค้นเรียงจากใหม่สุด แล้วต่อด้วยคำที่คะแนนสูงแต่ยังไม่มีเวลา */
+        fun recentQueries(limit: Int): List<String> =
+            (queryTimes.entries.sortedByDescending { it.value }.map { it.key } +
+                queries.entries.sortedByDescending { it.value }.map { it.key })
+                .distinct()
+                .take(limit)
+    }
 
     /** ตัวเลือกคุณภาพเริ่มต้น: audio (ประหยัดสุด) / 360 / 480 / 720 / 1080 / best */
     fun defQuality(ctx: Context): String = sp(ctx).getString(K_QUALITY, "audio") ?: "audio"
@@ -100,6 +109,7 @@ object Store {
         .put("views", h.views).put("age", h.age).put("channelId", h.channelId)
         .put("sourceQuery", h.sourceQuery ?: "")
         .put("sourceTopicId", h.sourceTopicId ?: "")
+        .put("localPath", h.localPath ?: "")
 
     private fun toHit(o: JSONObject) = Hit(
         id = o.optString("id"),
@@ -111,7 +121,8 @@ object Store {
         age = o.optString("age"),
         channelId = o.optString("channelId"),
         sourceQuery = o.optString("sourceQuery").takeIf { it.isNotBlank() },
-        sourceTopicId = o.optString("sourceTopicId").takeIf { it.isNotBlank() }
+        sourceTopicId = o.optString("sourceTopicId").takeIf { it.isNotBlank() },
+        localPath = o.optString("localPath").takeIf { it.isNotBlank() }
     )
 
     // ---------- เพลย์ลิสต์ (Playlists) ----------
@@ -227,13 +238,20 @@ object Store {
             }
         }
         val recent = root.optJSONArray("recentVideoIds") ?: JSONArray()
+        val times = root.optJSONObject("queryTimes") ?: JSONObject()
         RecommendationPreferences(
             queries = scores("queries"),
             topics = scores("topics"),
             channels = scores("channels"),
             recentVideoIds = (0 until recent.length())
                 .map { recent.optString(it) }
-                .filter { it.isNotBlank() }
+                .filter { it.isNotBlank() },
+            queryTimes = buildMap {
+                for (key in times.keys()) {
+                    val at = times.optLong(key)
+                    if (at > 0) put(key, at)
+                }
+            }
         )
     }.getOrElse { error ->
         android.util.Log.w("YtKeep", "Could not read recommendation preferences", error)
@@ -311,18 +329,36 @@ object Store {
     }
 
     @Synchronized
+    fun recordSearch(ctx: Context, query: String) {
+        val q = normalizeQuery(query) ?: return
+        val now = System.currentTimeMillis()
+        updateRecommendationPreferences(ctx) { current ->
+            current.copy(queryTimes = stampQuery(current.queryTimes, q, now))
+        }
+    }
+
+    private fun normalizeQuery(raw: String?): String? = raw
+        ?.trim()
+        ?.replace(Regex("\\s+"), " ")
+        ?.take(80)
+        ?.lowercase(java.util.Locale.ROOT)
+        ?.takeIf { it.isNotBlank() && !it.contains("://") }
+
+    private fun stampQuery(current: Map<String, Long>, query: String, nowMs: Long): Map<String, Long> =
+        (current.filterKeys { it != query } + (query to nowMs))
+            .entries
+            .sortedByDescending { it.value }
+            .take(MAX_RECENT_QUERIES)
+            .associate { it.key to it.value }
+
+    @Synchronized
     fun recordInteraction(
         ctx: Context,
         hit: Hit,
         signal: InterestSignal
     ) {
         updateRecommendationPreferences(ctx) { current ->
-            val query = hit.sourceQuery
-                ?.trim()
-                ?.replace(Regex("\\s+"), " ")
-                ?.take(80)
-                ?.lowercase(java.util.Locale.ROOT)
-                ?.takeIf { it.isNotBlank() && !it.contains("://") }
+            val query = normalizeQuery(hit.sourceQuery)
             val topics = hit.sourceTopicId?.takeIf { it.isNotBlank() }
             var next = current.copy(
                 queries = decay(current.queries),
@@ -332,7 +368,10 @@ object Store {
                     .takeLast(100)
             )
             if (query != null) {
-                next = next.copy(queries = addScore(next.queries, query, signal.weight, 20))
+                next = next.copy(
+                    queries = addScore(next.queries, query, signal.weight, 20),
+                    queryTimes = stampQuery(next.queryTimes, query, System.currentTimeMillis())
+                )
             }
             if (topics != null) {
                 next = next.copy(topics = addScore(next.topics, topics, signal.weight, 20))
@@ -368,6 +407,9 @@ object Store {
         root.put("recentVideoIds", JSONArray().apply {
             next.recentVideoIds.forEach(::put)
         })
+        root.put("queryTimes", JSONObject().apply {
+            next.queryTimes.forEach { (key, value) -> put(key, value) }
+        })
         sp(ctx).edit().putString(K_RECOMMENDATIONS, root.toString()).apply()
     }
 
@@ -388,4 +430,6 @@ object Store {
     private fun decay(scores: Map<String, Int>): Map<String, Int> =
         scores.mapValues { (_, score) -> (score * 4 / 5).coerceAtLeast(1) }
             .filterValues { it > 0 }
+
+    private const val MAX_RECENT_QUERIES = 20
 }

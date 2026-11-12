@@ -28,9 +28,12 @@ data class Hit(
     val age: String = "",
     val channelId: String = "",
     val sourceQuery: String? = null,
-    val sourceTopicId: String? = null
+    val sourceTopicId: String? = null,
+    /** ไฟล์ในเครื่อง (absolute path) — ถ้ามีค่านี้ url จะชี้ไปที่ไฟล์แทน YouTube */
+    val localPath: String? = null
 ) {
-    val url: String get() = "https://www.youtube.com/watch?v=$id"
+    val url: String
+        get() = localPath?.let { "file://$it" } ?: "https://www.youtube.com/watch?v=$id"
 }
 
 data class Info(

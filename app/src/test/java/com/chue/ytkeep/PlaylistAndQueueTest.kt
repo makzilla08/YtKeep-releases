@@ -136,4 +136,29 @@ class PlaylistAndQueueTest {
         assertEquals("a", pl.items[0].id)
         assertEquals("b", pl.items[1].id)
     }
+
+    @Test
+    fun localFileHitUsesFileUrlAndJoinsCurrentQueue() {
+        val local = Hit(
+            id = "task-1",
+            title = "ไฟล์ในเครื่อง",
+            channel = "ช่องของฉัน",
+            seconds = 0L,
+            thumb = null,
+            localPath = "/storage/emulated/0/Android/data/com.chue.ytnx/files/media/clip.mp4"
+        )
+        assertEquals(
+            "file:///storage/emulated/0/Android/data/com.chue.ytnx/files/media/clip.mp4",
+            local.url
+        )
+
+        QueueManager.playQueue(null, null, listOf(sampleHit("1")), 0)
+        QueueManager.addToQueue(local)
+        assertEquals(2, QueueManager.state.items.size)
+        assertEquals(local.url, QueueManager.state.items[1].url)
+
+        // เพิ่มซ้ำต้องไม่เกิดรายการซ้ำในคิว
+        QueueManager.addToQueue(local)
+        assertEquals(2, QueueManager.state.items.size)
+    }
 }

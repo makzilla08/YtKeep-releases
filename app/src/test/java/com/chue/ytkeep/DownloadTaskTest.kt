@@ -1,6 +1,8 @@
 package com.chue.ytkeep
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadTaskTest {
@@ -57,5 +59,16 @@ class DownloadTaskTest {
 
         assertEquals(completed, completed.cancel())
         assertEquals(completed, completed.retry())
+    }
+
+    @Test
+    fun onlyFinishedStatesAreTerminalForQueueClearing() {
+        assertTrue(DownloadState.COMPLETED.isTerminal)
+        assertTrue(DownloadState.FAILED.isTerminal)
+        assertTrue(DownloadState.CANCELLED.isTerminal)
+
+        assertFalse(DownloadState.QUEUED.isTerminal)
+        assertFalse(DownloadState.RUNNING.isTerminal)
+        assertFalse(DownloadState.CANCELLING.isTerminal)
     }
 }

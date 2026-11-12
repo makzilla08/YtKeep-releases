@@ -12,8 +12,8 @@ android {
         applicationId = "com.chue.ytnx"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "3.3"
+        versionCode = 17
+        versionName = "3.8"
 
         ndk {
             // ค่าเริ่มต้นมี x86_64 ไว้ทดสอบบน emulator; build สำหรับมือถือใช้ -Pabis=arm64-v8a,armeabi-v7a
@@ -82,6 +82,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 }

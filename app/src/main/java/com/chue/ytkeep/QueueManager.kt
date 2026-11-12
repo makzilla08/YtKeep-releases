@@ -208,7 +208,7 @@ object QueueManager {
                     .setArtist(item.channel)
                 if (!item.thumb.isNullOrBlank()) metadata.setArtworkUri(Uri.parse(item.thumb))
                 val mediaItem = MediaItem.Builder()
-                    .setMediaId(item.id)
+                    .setMediaId(MediaIdentity.forPlayback(item.id, streamUrl)?.mediaId.orEmpty())
                     .setUri(streamUrl)
                     .setMediaMetadata(metadata.build())
                     .build()

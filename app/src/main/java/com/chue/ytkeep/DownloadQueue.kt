@@ -15,6 +15,12 @@ enum class DownloadState {
     CANCELLED
 }
 
+/** สถานะที่ "จบแล้ว" (เสร็จ/ยกเลิก/ล้มเหลว) — ล้างออกจากคิวได้ ไม่มีอะไรค้างอยู่ */
+val DownloadState.isTerminal: Boolean
+    get() = this == DownloadState.COMPLETED ||
+        this == DownloadState.CANCELLED ||
+        this == DownloadState.FAILED
+
 data class DownloadTask(
     val id: String,
     val videoUrl: String,
@@ -128,6 +134,11 @@ object DownloadQueue {
                 it.state == DownloadState.COMPLETED || it.state == DownloadState.CANCELLED
             }
         )
+    }
+
+    /** ล้างรายการที่ "จบแล้ว" ทุกแบบ: เสร็จแล้ว + ยกเลิก + ล้มเหลว (ที่ค้างเต็่มคิว) */
+    fun clearTerminal(ctx: Context) = synchronized(lock) {
+        write(ctx, read(ctx).filterNot { it.state.isTerminal })
     }
 
     fun recoverInterrupted(ctx: Context) = synchronized(lock) {
