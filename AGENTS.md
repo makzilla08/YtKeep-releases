@@ -33,6 +33,9 @@ $ANDROID_HOME/platform-tools/adb install -r YtKeep/app/build/outputs/apk/debug/a
 6. อย่าเพิ่ม `android.util.Log` ค้างไว้ใน service (เคยมี debug log `YtKeepSvc` ตอนแก้ ANR)
 7. อย่าใช้ keyword ภาษาไทยใน `adb shell input text` (ตัวอักษรหาย) — ใช้ `am start -a android.intent.action.SEND` แทน
 
+8. `DownloadService` การเริ่ม service ด้วย `ContextCompat.startForegroundService` ต้องครอบด้วย `runCatching` เสมอ เพื่อป้องกัน `ForegroundServiceStartNotAllowedException` บน Android 12-14 (Target SDK 35) เมื่อแอปถูกจำกัดสิทธิ์ในพื้นหลัง
+9. `PlayerService` ต้องปรับแต่ง `LoadControl` ให้พอเหมาะกับอุปกรณ์ Low RAM (RAM 3GB เช่น Infinix) ไม่ปล่อยให้ ExoPlayer บัฟเฟอร์ไม่จำกัดจนเกิดแรงกดดัน LowMemoryKiller (LMK)
+
 ## จุดที่แก้บ่อย
 
 | ต้องแก้อะไร | แก้ที่ |
@@ -54,8 +57,13 @@ $ANDROID_HOME/platform-tools/adb install -r YtKeep/app/build/outputs/apk/debug/a
 - [ ] ถ้าแตะเรื่องเล่น: `adb shell dumpsys media_session | grep PlaybackState` ต้องเป็น `PLAYING`
 - [x] อัปเดต `README.md` หัวข้อ "สถานะปัจจุบัน" และ "งานที่ควรทำต่อ"
 
-## สถานะปัจจุบัน (2026-11-04)
-- v1.5 (`versionCode 6`) เผยแพร่ที่ GitHub Release `v2.0`
+## เป้าหมายใหญ่ถัดไป (Target: Instant Playback Like Brave)
+- พัฒนาระบบแกะสตรีม/เล่นวิดีโอให้เริ่มเล่นได้รวดเร็วทันทีระดับ Brave Browser (< 1 วินาที) โดยไม่ต้องรอรอบการถอดรหัสของ Python `yt-dlp` นาน
+- นำร่องด้วยกลยุทธ์ **Pre-fetching Stream URL** สำหรับรายการถัดไปในคิว และการศึกษา **Lightweight Direct Extractor** เพื่อข้ามภาระของ Python Runtime บนมือถือ
+
+## สถานะปัจจุบัน (2026-11-23)
+- YTNx 3.9.1 (`versionCode 20`) = 3.9-instant ที่แก้บั๊กแล้ว: player `singleTop` (ไม่มี activity ซ้อน), เปิด loading ทันที, `StreamCache` single-flight + serialize yt-dlp (กัน prefetch แย่งคิว), `InnerTube.fastStreamUrl()` (~0.3 วิ) ก่อน fallback yt-dlp, และ guard `PlayerActivity.current`/`playToken` กันเสียงหลุดเมื่อกด BACK ระหว่างโหลด — วัดบน Infinix ได้ `PLAYING` 3.2–3.6 วิ
+- YTNx v3.9 (`versionCode 18`) แก้ไขปัญหา Crash จาก `ForegroundServiceStartNotAllowedException` และปรับแต่ง `DefaultLoadControl` ป้องกัน LMK บน Android 14 (Infinix X6532) พร้อมติดตั้งและรันบนเครื่องจริงแล้ว
 - YTNx 2.0 (`versionCode 7`) เผยแพร่ที่ GitHub Release `v2.1`
 - YTNx 2.1 (`versionCode 8`) เผยแพร่ที่ GitHub Release `v2.2`; ARM APK มี arm64-v8a + armeabi-v7a และใช้ Android Debug certificate เดียวกับรุ่นก่อน
 - YTNx v3 (`versionCode 9`, `versionName 3.0`) เผยแพร่ที่ GitHub Release `v2.3`; รองรับการบราวซ์แบ่งหน้าครั้งละ 30 คลิป พร้อมปุ่มแสดงผลเพิ่มเติม (+30 คลิป) และข้อกำหนดดีไซน์ V3-DESIGN.md

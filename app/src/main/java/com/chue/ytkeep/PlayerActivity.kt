@@ -1,6 +1,7 @@
 package com.chue.ytkeep
 
 import android.content.ComponentName
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -72,21 +74,32 @@ import com.google.common.util.concurrent.ListenableFuture
 
 class PlayerActivity : ComponentActivity() {
 
+    companion object {
+        /** instance ที่กำลังทำงาน — ใช้เช็กว่าผู้ใช้กดย้อนกลับไปแล้วหรือยัง */
+        @Volatile
+        var current: PlayerActivity? = null
+    }
+
     private lateinit var future: ListenableFuture<MediaController>
     private var controller: MediaController? by mutableStateOf(null)
     private var title by mutableStateOf("")
     private var author by mutableStateOf("")
     private var videoId by mutableStateOf("")
     private var currentMediaId by mutableStateOf("")
+    private var loading by mutableStateOf(false)
+    private var error by mutableStateOf("")
     private var mediaListener: Player.Listener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        current = this
         title = intent.getStringExtra("title").orEmpty()
         author = intent.getStringExtra("author").orEmpty()
         videoId = intent.getStringExtra("videoId").orEmpty()
+        loading = intent.getBooleanExtra("loading", false)
+        error = intent.getStringExtra("error").orEmpty()
 
         val token = SessionToken(this, ComponentName(this, PlayerService::class.java))
         future = MediaController.Builder(this, token).buildAsync()
@@ -130,6 +143,17 @@ class PlayerActivity : ComponentActivity() {
                         },
                         update = { it.player = controller }
                     )
+                    when {
+                        error.isNotBlank() -> PlayerStatusOverlay(
+                            message = error,
+                            isError = true,
+                            onBack = { finish() }
+                        )
+                        loading && (controller?.mediaItemCount ?: 0) == 0 -> PlayerStatusOverlay(
+                            message = "กำลังเตรียมสตรีม…",
+                            isError = false
+                        )
+                    }
                     Overlay(
                         title = title,
                         author = author,
@@ -149,12 +173,49 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        title = intent.getStringExtra("title").orEmpty()
+        author = intent.getStringExtra("author").orEmpty()
+        videoId = intent.getStringExtra("videoId").orEmpty()
+        loading = intent.getBooleanExtra("loading", false)
+        error = intent.getStringExtra("error").orEmpty()
+    }
+
     override fun onDestroy() {
+        if (current === this) current = null
         if (::future.isInitialized) {
             mediaListener?.let { controller?.removeListener(it) }
             MediaController.releaseFuture(future)
         }
         super.onDestroy()
+    }
+}
+
+@Composable
+private fun PlayerStatusOverlay(
+    message: String,
+    isError: Boolean,
+    onBack: (() -> Unit)? = null
+) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (isError) {
+                Text("เล่นไม่ได้", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+            } else {
+                CircularProgressIndicator(color = Color(0xFFE24A56))
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(message, color = Color(0xFFD1D5DB), fontSize = 14.sp)
+            if (onBack != null) {
+                Spacer(Modifier.height(10.dp))
+                TextButton(onClick = onBack) { Text("กลับ", color = Color(0xFFE24A56)) }
+            }
+        }
     }
 }
 

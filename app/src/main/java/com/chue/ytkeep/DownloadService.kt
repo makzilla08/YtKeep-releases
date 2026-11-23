@@ -223,15 +223,21 @@ class DownloadService : Service() {
             val intent = Intent(ctx, DownloadService::class.java)
                 .setAction(ACTION_CANCEL)
                 .putExtra(EXTRA_TASK_ID, taskId)
-            androidx.core.content.ContextCompat.startForegroundService(ctx, intent)
+            runCatching {
+                androidx.core.content.ContextCompat.startForegroundService(ctx, intent)
+            }.recoverCatching {
+                ctx.startService(intent)
+            }
         }
 
         private fun process(ctx: Context) {
             channel(ctx)
-            androidx.core.content.ContextCompat.startForegroundService(
-                ctx,
-                Intent(ctx, DownloadService::class.java).setAction(ACTION_PROCESS)
-            )
+            val intent = Intent(ctx, DownloadService::class.java).setAction(ACTION_PROCESS)
+            runCatching {
+                androidx.core.content.ContextCompat.startForegroundService(ctx, intent)
+            }.recoverCatching {
+                ctx.startService(intent)
+            }
         }
     }
 }

@@ -6,6 +6,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
@@ -21,9 +22,22 @@ class PlayerService : MediaSessionService() {
         super.onCreate()
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(UA)
+            .setConnectTimeoutMs(4_000)
+            .setReadTimeoutMs(8_000)
             .setAllowCrossProtocolRedirects(true)
 
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                5_000, // minBufferMs
+                20_000, // maxBufferMs
+                800,   // bufferForPlaybackMs — เริ่มเล่นเร็ว
+                1_500  // bufferForPlaybackAfterRebufferMs
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         val p = ExoPlayer.Builder(this)
+            .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)))
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -73,6 +87,13 @@ class PlayerService : MediaSessionService() {
     override fun onTaskRemoved(rootIntent: android.content.Intent?) {
         val p = player
         if (p == null || !p.playWhenReady || p.mediaItemCount == 0) stopSelf()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            StreamCache.clear()
+        }
     }
 
     override fun onDestroy() {

@@ -59,7 +59,7 @@
 | ฟีดแนะนำเฉพาะบุคคล | ✅ ใช้คำค้น/หัวข้อ/ช่องที่ผู้ใช้สนใจ, ตัดคลิปที่เพิ่งเปิด, ล้างประวัติได้ |
 | หน้าย่อยช่อง (กดช่อง → วิดีโอช่อง + เรียงใหม่/ยอดวิว) | ✅ ทดสอบบน emulator t35: แสดงไม่เกิน 30 วิดีโอ |
 | แท็บ "ติดตาม" เป็นรายชื่อช่องให้เลือก แล้วกดเข้าไปดูวิดีโอในช่องนั้น | ✅ มีใน v1.5; เคยทดสอบ flow บน emulator |
-| เวอร์ชันล่าสุดที่พัฒนา | ✅ YTNx v3.8 / `versionCode 17`, `versionName "3.8"` (เพิ่มปุ่ม "+" ในคิวที่กำลังเล่นจากไฟล์ดาวน์โหลด + ลดการเรียก `getExternalFilesDir` ซ้ำในคลัง; build/unit tests ผ่านและติดตั้งบน Infinix แล้ว) |
+| เวอร์ชันล่าสุดที่พัฒนา | ✅ YTNx v3.9.1 / `versionCode 20`, `versionName "3.9.1"` (แก้บั๊ก 3.9-instant: player ซ้อน/กดแล้วเงียบนาน + ใส่ InnerTube fast path ทำให้กดเล่นถึงเฟรมแรก ~3 วิ; build/unit tests ผ่านและติดตั้งบน Infinix แล้ว) |
 | APK ล่าสุดที่เผยแพร่ | ✅ [GitHub Release `v2.4`](https://github.com/makzilla08/YtKeep-releases/releases/tag/v2.4): `app-debug.apk`, YTNx v3.1 / versionCode 10, ARM 64/32-bit |
 | YTNx v3.1 | ✅ เพิ่มหัวข้อความสนใจกำหนดเอง (พิมพ์เอง) ในหน้าตั้งค่า; แสดงเป็นแท็บในหน้าแนะนำและดึงฟีดตามคำค้น |
 | YTNx v2.1 | ✅ ปรับหน้า Search และ Channel ตามม็อกอัป; unit tests ผ่านและทดสอบ flow ค้นหา/เปิดช่องบน t35 |
@@ -199,6 +199,14 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 - 2026-11-04: ทดสอบบน emulator `t35`: ซ่อนหัวข้อแล้วแท็บหาย, เล่นเสียงได้สถานะ `PLAYING`, ปุ่มพักเป็น `PAUSED`, เล่นต่อกลับ `PLAYING`, ปิดแล้ว MediaSession เป็น `NONE`
 - 2026-11-04: เพิ่มหัวข้อความสนใจกำหนดเอง (พิมพ์เอง) ในหน้าตั้งค่า; แสดงเป็นแท็บและใช้ดึงฟีด; build/test ผ่านและอัปโหลด APK ไป GitHub Release `v2.3` แล้ว
 - 2026-11-10: YTNx v3.4 (`versionCode 13`) เพิ่มบันทึกตำแหน่งเล่นต่อรายคลิปและหน้าแสดงความคิดเห็นแบบ in-app; `testDebugUnitTest assembleDebug` ผ่าน และติดตั้ง/เปิดบน Infinix ผ่าน USB Debug แล้ว
+- 2026-11-20: บันทึกและแก้ไขปัญหาแอป YTNx ล่มขณะเล่นบน Android 14 (Infinix X6532):
+  1. พบ `ForegroundServiceStartNotAllowedException` จาก `DownloadService.process()` เมื่อถูกสั่งงานนอก foreground ป้องกันโดยห่อ `runCatching` และ fallback ไปยัง `startService` ปกติ
+  2. จัดการแรงกดดันหน่วยความจำ (LowMemoryKiller / RAM 3GB): กำหนด `DefaultLoadControl` ใน `PlayerService` ปรับ buffer ขนาดกระชับ (15-30s) ไม่บวมสะสมจนถูกระบบฆ่า
+- 2026-11-20: **[เป้าหมายหลักสู่ YTNx v4 — ความเร็วระดับ Brave Browser]**
+  - **ปัญหาปัจจุบัน:** ปัจจุบันอาศัย Python/QuickJS `yt-dlp` บนอุปกรณ์เพื่อแกะลิงก์ตรง ทำให้ต้องรอนาน 3-8 วินาทีกว่าจะเริ่มเล่นคลิปได้ (เทียบกับ Brave ที่ข้ามแอดและเล่นได้ใน 0.5-1 วินาทีด้วย Native Web Engine + Network Blocking)
+  - **แผนยุทธศาสตร์:**
+    1. **Pre-fetching / Stream Cache:** ทำนายและดึง URL สตรีมของคลิปถัดไปในคิวล่วงหน้า เพื่อให้กดแล้วเริ่มเล่นได้ทันที (Zero-latency playback)
+    2. **Lightweight Extractor / Direct Web Extraction:** หลีกเลี่ยง overhead ของ Python interpreter โดยตรง หรือใช้ WebView / InnerTube Android Client สตรีมตรง เพื่อลดเวลา latency ในการแกะสตรีมลงให้เหลือระดับต่ำกว่า 1 วินาที
 - 2026-11-11: YTNx v3.7 (`versionCode 16`) แก้ปุ่มล้างคิวดาวน์โหลด: เดิม `clearFinished` ล้างแค่ COMPLETED/CANCELLED ทำให้รายการ FAILED ค้างสะสม — เพิ่ม `DownloadQueue.clearTerminal` + `DownloadState.isTerminal` และป้ายปุ่มบอกจำนวนตามสถานะ (`ล้างที่ล้มเหลว (n)` / `ล้างที่จบแล้ว (n)`)
 - 2026-11-11: YTNx v3.6 (`versionCode 15`) ฟีดแนะนำอ้าง "คำค้นล่าสุด" (`Store.recordSearch` + `queryTimes`, ใหม่สุดน้ำหนักสูงสุด) และจัดลำดับ/กรองตามอายุคลิปผ่าน `Freshness.kt` + `RecommendationRanker` (สด ≤30 วัน → กลาง ≤90 วัน → เก่าเฉพาะเมื่อของใหม่ไม่พอ) พร้อม unit test `FreshnessTest`/`prefersFreshVideosOverHighScoringOldOnes`
 - 2026-11-11: YTNx v3.5 (`versionCode 14`) สลับลำดับแท็บเป็น **แนะนำ → ค้นหา → ติดตาม → คลัง**, เปิดแอปแล้วโหลดฟีดหน้าแรกอัตโนมัติ (`LaunchedEffect(Unit)`), ปุ่มย้อนกลับจากหน้าตั้งค่ากลับแท็บเดิม (`settingsOrigin`) แทนการเด้งไปหน้าค้นหา; `assembleDebug` ผ่านและติดตั้งบน Infinix (X6532) แล้ว — ตรวจ UI ด้วยตาได้หลังปลดล็อกจอ
@@ -210,3 +218,11 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
 - Gradle: `~/android-dev/gradle-8.11.1`
 - yt-dlp บน host (ใช้อ้างอิง/ทดลอง): `~/.local/bin/yt-dlp` (2026.08.19); บนเครื่องแอปอัปเดตเป็น 2026.10.26
 - ชุดทดลอง yt-dlp บน emulator: `/data/local/tmp/ydl/` (bin/libpython.so, bin/libqjs.so, yt-dlp, packages/python/usr) — ต้องตั้ง `PYTHONHOME`, `LD_LIBRARY_PATH`, `SSL_CERT_FILE=<pythonHome>/usr/etc/tls/cert.pem`
+- 2026-11-23: YTNx v3.9.1 (`versionCode 20`) แก้บั๊กชุด 3.9-instant:
+  1. `PlayerActivity` เป็น `launchMode=singleTop` + `FLAG_ACTIVITY_SINGLE_TOP` → ไม่มี activity/PlayerView ซ้อน
+  2. เปิดหน้า player ทันทีพร้อมสถานะ "กำลังเตรียมสตรีม…" แทนการรอ yt-dlp ก่อนเปิดจอ (กดแล้วเห็นผลภายใน ~0.3 วิ)
+  3. `StreamCache` เป็น single-flight + serialize yt-dlp 1 งาน + ตัด prefetch ที่แย่งคิว (ลบ prefetch ตอนโหลดฟีดและ prefetch ทันทีหลังเริ่มเล่น)
+  4. เพิ่ม `InnerTube.fastStreamUrl()` (ANDROID client) ดึง URL muxed ~0.2-0.4 วิ ใช้ก่อน yt-dlp; yt-dlp เหลือเป็น fallback/ดาวน์โหลด
+  5. ปรับ `DefaultLoadControl` เป็น 5s/20s + เริ่มเล่นที่ 800ms และตั้ง timeout HTTP 4s/6s
+  6. กันเสียงหลุด: ถ้าผู้ใช้กดย้อนกลับระหว่างโหลด (`PlayerActivity` ถูก finish) จะไม่เริ่มเล่นสตรีมที่ fetch เสร็จทีหลัง + ใช้ `playToken` ทิ้งผลของคำสั่งเล่นเก่าที่มาช้า
+  - วัดบน Infinix X6532: tap → PlayerActivity 0.3 วิ, state=PLAYING 3.2 วิ, ไม่มี process `libpython/libqjs` ในเส้นทางเล่น, มี PlayerActivity instance เดียว

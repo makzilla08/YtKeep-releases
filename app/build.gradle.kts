@@ -12,8 +12,8 @@ android {
         applicationId = "com.chue.ytnx"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "3.8"
+        versionCode = 20
+        versionName = "3.9.1"
 
         ndk {
             // ค่าเริ่มต้นมี x86_64 ไว้ทดสอบบน emulator; build สำหรับมือถือใช้ -Pabis=arm64-v8a,armeabi-v7a

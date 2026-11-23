@@ -129,6 +129,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var future: ListenableFuture<MediaController>
     private var controller: MediaController? by mutableStateOf(null)
     private var pending: ((MediaController) -> Unit)? = null
+    /** นับคำสั่งเล่น — คำขอเก่าที่ fetch เสร็จช้าจะไม่ไปทับคลิปใหม่ */
+    private var playToken = 0
     private var sharedUrl by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -144,6 +146,7 @@ class MainActivity : ComponentActivity() {
                 controller = connectedController
                 pending?.invoke(connectedController)
                 pending = null
+                handleVoiceIntent(intent)
             }
         }, ContextCompat.getMainExecutor(this))
 
@@ -187,7 +190,47 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         intent.getStringExtra(Intent.EXTRA_TEXT)?.let { sharedUrl = extractUrl(it) }
+        controller?.let { handleVoiceIntent(intent) }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // เมื่อระบบส่งสัญญาณเตือนแรงกดดัน RAM ให้เคลียร์แคชทันที
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            StreamCache.clear()
+            coil.Coil.imageLoader(this).memoryCache?.clear()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        StreamCache.clear()
+        coil.Coil.imageLoader(this).memoryCache?.clear()
+    }
+
+    private fun handleVoiceIntent(intent: Intent) {
+        when (intent.action) {
+            "com.chue.ytnx.action.MEDIA_CONTROL" -> when (intent.getStringExtra("command")) {
+                "PLAY" -> controller?.play()
+                "PAUSE" -> controller?.pause()
+                "NEXT" -> QueueManager.skipToNext(this, controller)
+                "PREVIOUS" -> QueueManager.skipToPrevious(this, controller)
+            }
+            "com.chue.ytnx.action.PLAY_AUDIO_PLAYLIST",
+            "com.chue.ytnx.action.PLAY_VIDEO_PLAYLIST" -> {
+                val name = intent.getStringExtra("playlist_name").orEmpty()
+                val playlist = Store.playlists(this).firstOrNull { it.name.equals(name, ignoreCase = true) }
+                val localItems = playlist?.items?.filter { it.localPath?.isNotBlank() == true }
+                if (!localItems.isNullOrEmpty()) {
+                    QueueManager.playQueue(this, controller, localItems, title = playlist.name, localOnly = true)
+                } else {
+                    Toast.makeText(this, "ไม่พบไฟล์ที่ดาวน์โหลดในเพลย์ลิสต์นี้", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        intent.setAction(null)
     }
 
     private fun playChoice(
@@ -207,18 +250,59 @@ class MainActivity : ComponentActivity() {
             play(url, title, author, thumb, videoId)
             return
         }
+        // เปิด player ทันที (มี loading) — อย่าปล่อยให้จอเงียบระหว่างรอ yt-dlp
+        val token = ++playToken
+        openPlayer(title, author, videoId, loading = true)
         lifecycleScope.launch {
             val direct = withContext(Dispatchers.IO) {
-                runCatching {
-                    Yt.direct(this@MainActivity, url, if (selector.contains("+")) "b" else selector)
-                }.getOrNull()
+                // ทางลัด: InnerTube ~0.3 วิ (muxed) แล้วค่อย fallback yt-dlp
+                InnerTube.fastStreamUrl(this@MainActivity, videoId, heightOf(selector))
+                    ?: runCatching {
+                        StreamCache.getOrFetch(this@MainActivity, url, if (selector.contains("+")) "b" else selector)
+                    }.getOrNull()
             }
-            if (direct != null) play(direct, title, author, thumb, videoId)
-            else Toast.makeText(this@MainActivity, "ดึงลิงก์เล่นไม่สำเร็จ", Toast.LENGTH_SHORT).show()
+            // ผู้ใช้กดย้อนกลับไปแล้ว หรือออกคำสั่งเล่นใหม่ทับ → ทิ้งผลลัพธ์นี้ (กันเสียงเล่นต่อ)
+            val pa = PlayerActivity.current
+            if (token != playToken || pa == null || pa.isFinishing || pa.isDestroyed) return@launch
+            if (direct != null) {
+                play(direct, title, author, thumb, videoId, openUi = false)
+            } else {
+                Toast.makeText(this@MainActivity, "ดึงลิงก์เล่นไม่สำเร็จ", Toast.LENGTH_SHORT).show()
+                openPlayer(title, author, videoId, loading = false, error = "ดึงลิงก์เล่นไม่สำเร็จ — ลองใหม่")
+            }
         }
     }
 
-    private fun play(url: String, title: String, author: String, thumb: String? = null, videoId: String = "") {
+    private fun heightOf(selector: String): Int =
+        Regex("height<=([0-9]+)").find(selector)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 360
+
+    private fun openPlayer(
+        title: String,
+        author: String,
+        videoId: String,
+        loading: Boolean,
+        error: String? = null
+    ) {
+        startActivity(
+            Intent(this, PlayerActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra("title", title)
+                putExtra("author", author)
+                putExtra("videoId", videoId)
+                putExtra("loading", loading)
+                putExtra("error", error)
+            }
+        )
+    }
+
+    private fun play(
+        url: String,
+        title: String,
+        author: String,
+        thumb: String? = null,
+        videoId: String = "",
+        openUi: Boolean = true
+    ) {
         val run = { c: MediaController ->
             val metadata = MediaMetadata.Builder()
                 .setTitle(title)
@@ -235,13 +319,7 @@ class MainActivity : ComponentActivity() {
             c.play()
         }
         controller?.let(run) ?: run { pending = run }
-        startActivity(
-            Intent(this, PlayerActivity::class.java).apply {
-                putExtra("title", title)
-                putExtra("author", author)
-                putExtra("videoId", videoId)
-            }
-        )
+        if (openUi) openPlayer(title, author, videoId, loading = false)
     }
 
     override fun onDestroy() {
@@ -292,6 +370,7 @@ fun App(
     var channelErr by remember { mutableStateOf<String?>(null) }
     var menuHit by remember { mutableStateOf<Hit?>(null) }
     var defQ by remember { mutableStateOf(Store.defQuality(ctx)) }
+    var defPlayQ by remember { mutableStateOf(Store.defPlayQuality(ctx)) }
     var feed by remember { mutableStateOf<List<Hit>>(emptyList()) }
     var feedLoading by remember { mutableStateOf(false) }
     var ytver by remember { mutableStateOf("") }
@@ -559,6 +638,19 @@ fun App(
                 }
             }
         }
+    }
+
+    val instantPlay: (Hit) -> Unit = { h ->
+        Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
+        val selector = when (defPlayQ) {
+            "360" -> "b[height<=360]/b"
+            "480" -> "b[height<=480]/b"
+            "720" -> "b[height<=720]/b"
+            "1080" -> "b[height<=1080]/b"
+            "audio" -> "bestaudio/b"
+            else -> "b"
+        }
+        playChoice(h.url, selector, h.title, h.channel, h.thumb)
     }
 
     val loadFeed: (String) -> Unit = { t ->
@@ -881,12 +973,7 @@ fun App(
                     hit = h,
                     saved = h.id in savedIds,
                     downloadLabel = downloadQualityLabel(defQ),
-                    onOpen = {
-                        Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
-                        url = h.url
-                        hits = emptyList()
-                        doFetch(h.url)
-                    },
+                    onOpen = { instantPlay(h) },
                     onLongPress = { menuHit = h },
                     onSave = { Store.toggleSave(ctx, h); tick++ },
                     onDownload = { quickDownload(h, defQ) },
@@ -995,14 +1082,7 @@ fun App(
                             hit = h,
                             saved = h.id in savedIds,
                             downloadLabel = "ดาวน์โหลด",
-                            onOpen = {
-                                Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
-                                url = h.url
-                                tab = "search"
-                                feed = emptyList()
-                                hits = emptyList()
-                                doFetch(h.url)
-                            },
+                            onOpen = { instantPlay(h) },
                             onLongPress = { menuHit = h },
                             onSave = {
                                 Store.toggleSave(ctx, h)
@@ -1167,14 +1247,7 @@ fun App(
                         hit = h,
                         saved = h.id in savedIds,
                         downloadLabel = downloadQualityLabel(defQ),
-                        onOpen = {
-                            Store.recordInteraction(ctx, h, Store.InterestSignal.OPENED)
-                            url = h.url
-                            tab = channelOrigin
-                            channelId = null
-                            hits = emptyList()
-                            doFetch(h.url)
-                        },
+                        onOpen = { instantPlay(h) },
                         onLongPress = { menuHit = h },
                         onSave = { Store.toggleSave(ctx, h); tick++ },
                         onDownload = { quickDownload(h, defQ) }
@@ -1458,12 +1531,7 @@ fun App(
                                         hit = hit,
                                         saved = hit.id in savedIds,
                                         downloadLabel = "ดาวน์โหลด",
-                                        onOpen = {
-                                            Store.recordInteraction(ctx, hit, Store.InterestSignal.OPENED)
-                                            url = hit.url
-                                            tab = "search"
-                                            doFetch(hit.url)
-                                        },
+                                        onOpen = { instantPlay(hit) },
                                         onLongPress = { menuHit = hit },
                                         onSave = { Store.toggleSave(ctx, hit); tick++ },
                                         onDownload = { menuHit = hit },
@@ -1709,12 +1777,7 @@ fun App(
                             hit = hit,
                             saved = true,
                             downloadLabel = "ดาวน์โหลด",
-                            onOpen = {
-                                Store.recordInteraction(ctx, hit, Store.InterestSignal.OPENED)
-                                url = hit.url
-                                tab = "search"
-                                doFetch(hit.url)
-                            },
+                            onOpen = { instantPlay(hit) },
                             onLongPress = { menuHit = hit },
                             onSave = { Store.toggleSave(ctx, hit); tick++ },
                             onDownload = { menuHit = hit },
@@ -1877,6 +1940,30 @@ fun App(
                 Text("ล้างประวัติแนะนำ")
             }
             Spacer(Modifier.height(8.dp))
+            SectionLabel("คุณภาพเริ่มต้นเมื่อกดเล่นทันที")
+            listOf(
+                "360" to "360p (แนะนำ — เปิดเล่นทันทีเร็วที่สุด ประหยัดเน็ต)",
+                "480" to "480p",
+                "720" to "720p (HD)",
+                "1080" to "1080p (Full HD)",
+                "audio" to "เสียงเท่านั้น (.m4a)",
+                "best" to "ดีที่สุดตามสตรีมตรง"
+            ).forEach { (id, label) ->
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        Store.setDefPlayQuality(ctx, id)
+                        defPlayQ = id
+                    }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = defPlayQ == id, onClick = {
+                        Store.setDefPlayQuality(ctx, id)
+                        defPlayQ = id
+                    })
+                    Text(label, fontSize = 14.sp)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             SectionLabel("คุณภาพเริ่มต้นเมื่อกดดาวน์โหลด")
             listOf(
                 "audio" to "เสียงเท่านั้น (.m4a) — ประหยัดเน็ตสุด สำหรับฟัง",

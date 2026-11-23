@@ -28,7 +28,8 @@ object QueueManager {
         val title: String = "คิวเล่นต่อเนื่อง",
         val repeatMode: RepeatMode = RepeatMode.OFF,
         val isShuffle: Boolean = false,
-        val isLoadingNext: Boolean = false
+        val isLoadingNext: Boolean = false,
+        val localOnly: Boolean = false
     ) {
         val currentItem: Hit? get() = items.getOrNull(currentIndex)
         val hasNext: Boolean
@@ -52,6 +53,7 @@ object QueueManager {
         items: List<Hit>,
         startIndex: Int = 0,
         title: String = "คิวเล่นต่อเนื่อง",
+        localOnly: Boolean = false,
         onReady: (() -> Unit)? = null
     ) {
         if (items.isEmpty()) return
@@ -60,7 +62,8 @@ object QueueManager {
             items = items,
             currentIndex = validIndex,
             title = title,
-            isLoadingNext = false
+            isLoadingNext = false,
+            localOnly = localOnly
         )
         if (ctx != null && player != null) {
             playCurrent(ctx, player, onReady)
@@ -193,12 +196,17 @@ object QueueManager {
         state = state.copy(isLoadingNext = true)
         playJob = scope.launch {
             val streamUrl = withContext(Dispatchers.IO) {
-                if (item.url.startsWith("file://") || item.url.startsWith("content://")) {
+                if (state.localOnly) {
+                    // Voice/playlist playback is local-only. Never turn a missing
+                    // local file into an online stream by accident.
+                    val candidate = item.localPath?.takeIf { it.isNotBlank() }
+                        ?: item.url.takeIf { it.startsWith("file://") || it.startsWith("content://") }
+                    candidate?.let { if (it.startsWith("/")) "file://$it" else it }
+                } else if (item.url.startsWith("file://") || item.url.startsWith("content://")) {
                     item.url
                 } else {
-                    runCatching {
-                        Yt.direct(ctx, item.url, "b")
-                    }.getOrNull()
+                    runCatching { InnerTube.fastStreamUrl(ctx, item.id) }.getOrNull()
+                        ?: runCatching { StreamCache.getOrFetch(ctx, item.url, "b") }.getOrNull()
                 }
             }
             state = state.copy(isLoadingNext = false)

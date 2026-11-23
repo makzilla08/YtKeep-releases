@@ -33,6 +33,7 @@
 
         <activity
             android:name=".PlayerActivity"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
             android:exported="false"
             android:theme="@style/AppTheme" />
@@ -50,5 +51,15 @@
             android:name=".DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".VoiceCommandReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.chue.ytnx.action.PLAY_AUDIO_PLAYLIST" />
+                <action android:name="com.chue.ytnx.action.PLAY_VIDEO_PLAYLIST" />
+                <action android:name="com.chue.ytnx.action.MEDIA_CONTROL" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

@@ -12,6 +12,7 @@ object Store {
     private const val K_FOLLOW = "follows"
     private const val K_SAVED = "saved"
     private const val K_QUALITY = "defQuality"
+    private const val K_PLAY_QUALITY = "defPlayQuality"
     private const val K_RECOMMENDATIONS = "recommendationPrefs"
     private const val K_DISABLED_TOPICS = "disabledRecommendationTopics"
     private const val K_CUSTOM_TOPICS = "customRecommendationTopics"
@@ -44,6 +45,13 @@ object Store {
 
     fun setDefQuality(ctx: Context, q: String) {
         sp(ctx).edit().putString(K_QUALITY, q).apply()
+    }
+
+    /** คุณภาพเริ่มต้นสำหรับการเล่นทันที (ค่าเริ่มต้น 360p เพื่อความเร็วสูงสุดและไม่เปลืองเน็ต) */
+    fun defPlayQuality(ctx: Context): String = sp(ctx).getString(K_PLAY_QUALITY, "360") ?: "360"
+
+    fun setDefPlayQuality(ctx: Context, q: String) {
+        sp(ctx).edit().putString(K_PLAY_QUALITY, q).apply()
     }
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences("ytkeep", Context.MODE_PRIVATE)
