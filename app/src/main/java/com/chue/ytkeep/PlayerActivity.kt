@@ -2,7 +2,9 @@ package com.chue.ytkeep
 
 import android.content.ComponentName
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
+import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -59,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,8 +69,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.google.common.util.concurrent.ListenableFuture
@@ -88,11 +95,15 @@ class PlayerActivity : ComponentActivity() {
     private var currentMediaId by mutableStateOf("")
     private var loading by mutableStateOf(false)
     private var error by mutableStateOf("")
+    /** แผงควบคุมของแอปซ่อน/โชว์ตามคอนโทรลเลอร์ของ PlayerView — ไม่ให้คาดดำทับภาพตอนเล่นเต็มจอ */
+    private var overlayVisible by mutableStateOf(true)
+    private var playerView: PlayerView? = null
     private var mediaListener: Player.Listener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        applyImmersive(isLandscape())
 
         current = this
         title = intent.getStringExtra("title").orEmpty()
@@ -131,6 +142,8 @@ class PlayerActivity : ComponentActivity() {
                     if (activeVideoId == null) showComments = false
                 }
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    val config = LocalConfiguration.current
+                    val isLandscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
@@ -141,7 +154,14 @@ class PlayerActivity : ComponentActivity() {
                                 player = controller
                             }
                         },
-                        update = { it.player = controller }
+                        update = { view ->
+                            view.player = controller
+                            // แนวนอน = ขยายเต็มจอไม่มีขอบดำ / แนวตั้ง = แสดงเต็มภาพอาจมีขอบดำ
+                            view.setResizeMode(
+                                if (isLandscape) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                else AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            )
+                        }
                     )
                     when {
                         error.isNotBlank() -> PlayerStatusOverlay(
@@ -191,6 +211,15 @@ class PlayerActivity : ComponentActivity() {
         }
         super.onDestroy()
     }
+
+    private fun isLandscape(): Boolean =
+        resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    private fun applyImmersive(landscape: Boolean) {
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE)
+    }
 }
 
 @Composable
@@ -228,6 +257,8 @@ private fun Overlay(
     onBack: () -> Unit,
     onOpenComments: () -> Unit
 ) {
+    val config = LocalConfiguration.current
+    val landscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
     val ctx = LocalContext.current
     val qState = QueueManager.state
     var showQueueDialog by remember { mutableStateOf(false) }
@@ -240,9 +271,10 @@ private fun Overlay(
         ?: author.ifBlank { controller?.mediaMetadata?.artist?.toString().orEmpty() }
     val currentVid = videoId
 
-    Column(Modifier.fillMaxSize().padding(12.dp)) {
-        // แถบหัวเรื่องด้านบน
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    if (!landscape) {
+        Column(Modifier.fillMaxSize().padding(12.dp)) {
+            // แถบหัวเรื่องด้านบน
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
                     Icons.Filled.ArrowBack,
@@ -399,6 +431,19 @@ private fun Overlay(
                         Text("เซฟเป็นเพลย์ลิสต์", fontSize = 12.sp)
                     }
                 }
+            }
+        }
+    }
+} else {
+        Box(
+            Modifier.padding(16.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.Filled.ArrowBack,
+                    contentDescription = "กลับ",
+                    tint = Color.White
+                )
             }
         }
     }

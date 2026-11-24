@@ -2735,9 +2735,14 @@ private fun VideoCard(
                         )
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // ปุ่มเล่น — ขยายเต็มพื้นที่ที่เหลือ ให้เด่นกว่าปุ่มดาวน์โหลด
                     Row(
-                        Modifier.height(30.dp).clickable(onClick = onOpen)
+                        Modifier.weight(1f).height(30.dp).clickable(onClick = onOpen)
                             .padding(horizontal = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -2745,15 +2750,21 @@ private fun VideoCard(
                             Icons.Default.PlayArrow,
                             null,
                             tint = Color(0xFFD86A73),
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                        Text("เล่น", fontSize = 10.sp, color = Color(0xFFD86A73))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "เล่น",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFD86A73)
+                        )
                     }
                     Spacer(Modifier.width(4.dp))
                     Surface(
                         color = Color(0xFF812E38),
                         shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.weight(1f).height(30.dp).clickable(onClick = onDownload)
+                        modifier = Modifier.height(30.dp).clickable(onClick = onDownload)
                     ) {
                         Row(
                             Modifier.padding(horizontal = 7.dp),

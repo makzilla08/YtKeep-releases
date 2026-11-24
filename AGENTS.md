@@ -61,8 +61,9 @@ $ANDROID_HOME/platform-tools/adb install -r YtKeep/app/build/outputs/apk/debug/a
 - พัฒนาระบบแกะสตรีม/เล่นวิดีโอให้เริ่มเล่นได้รวดเร็วทันทีระดับ Brave Browser (< 1 วินาที) โดยไม่ต้องรอรอบการถอดรหัสของ Python `yt-dlp` นาน
 - นำร่องด้วยกลยุทธ์ **Pre-fetching Stream URL** สำหรับรายการถัดไปในคิว และการศึกษา **Lightweight Direct Extractor** เพื่อข้ามภาระของ Python Runtime บนมือถือ
 
-## สถานะปัจจุบัน (2026-11-23)
-- YTNx 3.9.1 (`versionCode 20`) = 3.9-instant ที่แก้บั๊กแล้ว: player `singleTop` (ไม่มี activity ซ้อน), เปิด loading ทันที, `StreamCache` single-flight + serialize yt-dlp (กัน prefetch แย่งคิว), `InnerTube.fastStreamUrl()` (~0.3 วิ) ก่อน fallback yt-dlp, และ guard `PlayerActivity.current`/`playToken` กันเสียงหลุดเมื่อกด BACK ระหว่างโหลด — วัดบน Infinix ได้ `PLAYING` 3.2–3.6 วิ
+## สถานะปัจจุบัน (2026-11-24)
+- YTNx 3.9.2 (`versionCode 21`) = 3.9.1 + แก้แถบ overlay ทับภาพในตัวเล่นเต็มจอแนวนอน (ซ่อน overlay ตาม `PlayerView`, immersive ซ่อน system bars, `resizeMode` ZOOM แนวนอน/FIT แนวตั้ง) + ปุ่ม "เล่น" เด่นขึ้นในการ์ดวิดีโอ
+- YTNx 3.9.1 (`versionCode 20`) = 3.9-instant ที่แก้บั๊กแล้ว:player `singleTop` (ไม่มี activity ซ้อน), เปิด loading ทันที, `StreamCache` single-flight + serialize yt-dlp (กัน prefetch แย่งคิว), `InnerTube.fastStreamUrl()` (~0.3 วิ) ก่อน fallback yt-dlp, และ guard `PlayerActivity.current`/`playToken` กันเสียงหลุดเมื่อกด BACK ระหว่างโหลด — วัดบน Infinix ได้ `PLAYING` 3.2–3.6 วิ
 - YTNx v3.9 (`versionCode 18`) แก้ไขปัญหา Crash จาก `ForegroundServiceStartNotAllowedException` และปรับแต่ง `DefaultLoadControl` ป้องกัน LMK บน Android 14 (Infinix X6532) พร้อมติดตั้งและรันบนเครื่องจริงแล้ว
 - YTNx 2.0 (`versionCode 7`) เผยแพร่ที่ GitHub Release `v2.1`
 - YTNx 2.1 (`versionCode 8`) เผยแพร่ที่ GitHub Release `v2.2`; ARM APK มี arm64-v8a + armeabi-v7a และใช้ Android Debug certificate เดียวกับรุ่นก่อน

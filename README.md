@@ -59,7 +59,7 @@
 | ฟีดแนะนำเฉพาะบุคคล | ✅ ใช้คำค้น/หัวข้อ/ช่องที่ผู้ใช้สนใจ, ตัดคลิปที่เพิ่งเปิด, ล้างประวัติได้ |
 | หน้าย่อยช่อง (กดช่อง → วิดีโอช่อง + เรียงใหม่/ยอดวิว) | ✅ ทดสอบบน emulator t35: แสดงไม่เกิน 30 วิดีโอ |
 | แท็บ "ติดตาม" เป็นรายชื่อช่องให้เลือก แล้วกดเข้าไปดูวิดีโอในช่องนั้น | ✅ มีใน v1.5; เคยทดสอบ flow บน emulator |
-| เวอร์ชันล่าสุดที่พัฒนา | ✅ YTNx v3.9.1 / `versionCode 20`, `versionName "3.9.1"` (แก้บั๊ก 3.9-instant: player ซ้อน/กดแล้วเงียบนาน + ใส่ InnerTube fast path ทำให้กดเล่นถึงเฟรมแรก ~3 วิ; build/unit tests ผ่านและติดตั้งบน Infinix แล้ว) |
+| เวอร์ชันล่าสุดที่พัฒนา | ✅ YTNx v3.9.2 / `versionCode 21`, `versionName "3.9.2"` (ต่อจาก 3.9.1: แก้แถบ overlay ทับภาพในตัวเล่นเต็มจอแนวนอน + ปุ่ม "เล่น" เด่นขึ้น) |
 | APK ล่าสุดที่เผยแพร่ | ✅ [GitHub Release `v2.4`](https://github.com/makzilla08/YtKeep-releases/releases/tag/v2.4): `app-debug.apk`, YTNx v3.1 / versionCode 10, ARM 64/32-bit |
 | YTNx v3.1 | ✅ เพิ่มหัวข้อความสนใจกำหนดเอง (พิมพ์เอง) ในหน้าตั้งค่า; แสดงเป็นแท็บในหน้าแนะนำและดึงฟีดตามคำค้น |
 | YTNx v2.1 | ✅ ปรับหน้า Search และ Channel ตามม็อกอัป; unit tests ผ่านและทดสอบ flow ค้นหา/เปิดช่องบน t35 |
@@ -226,3 +226,9 @@ adb pull "<ไฟล์.mp4>" /tmp/x.mp4 && ffprobe -v error -show_entries strea
   5. ปรับ `DefaultLoadControl` เป็น 5s/20s + เริ่มเล่นที่ 800ms และตั้ง timeout HTTP 4s/6s
   6. กันเสียงหลุด: ถ้าผู้ใช้กดย้อนกลับระหว่างโหลด (`PlayerActivity` ถูก finish) จะไม่เริ่มเล่นสตรีมที่ fetch เสร็จทีหลัง + ใช้ `playToken` ทิ้งผลของคำสั่งเล่นเก่าที่มาช้า
   - วัดบน Infinix X6532: tap → PlayerActivity 0.3 วิ, state=PLAYING 3.2 วิ, ไม่มี process `libpython/libqjs` ในเส้นทางเล่น, มี PlayerActivity instance เดียว
+- 2026-11-24: YTNx v3.9.2 (`versionCode 21`) แก้แถบ overlay ในตัวเล่นเต็มจอ:
+  1. ซ่อน overlay ของแอป (`overlayVisible`) ตามคอนโทรลของ `PlayerView` → ไม่มีแถบดำคาดทับภาพตอนเล่น
+  2. โหมด immersive ซ่อน system bars (`BEHAVIOR_SHOW_BARS_BY_SWIPE`)
+  3. `resizeMode`: แนวนอน = `ZOOM` เต็มจอไม่มีขอบดำ, แนวตั้ง = `FIT` เห็นภาพเต็ม
+  4. แนวตั้งแสดง overlay ตามปกติ; แนวนอนเหลือเฉพาะปุ่มย้อนกลับ
+  5. การ์ดวิดีโอ: ปุ่ม "เล่น" ขยายเต็มความกว้างที่เหลือ + ไอคอน 18dp (เด่นกว่าปุ่มดาวน์โหลด)
